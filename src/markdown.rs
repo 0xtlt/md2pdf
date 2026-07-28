@@ -1,6 +1,10 @@
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
-use crate::cli::{CodeTheme, PageSize};
+use crate::{
+    Result,
+    cli::{CodeTheme, PageSize},
+    highlight::{StyledToken, SyntaxHighlighter},
+};
 
 const POINTS_PER_MM: f32 = 2.834_646;
 const CODE_GLYPH_WIDTH_PT: f32 = 4.45;
@@ -62,9 +66,9 @@ pub fn first_title(markdown: &str) -> Option<String> {
 }
 
 /// Convert Markdown into a complete Typst source document.
-#[must_use]
-pub fn to_typst(markdown: &str, options: &TypstOptions) -> String {
+pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<String> {
     let parser = Parser::new_ext(markdown, parser_options());
+    let mut liquid_highlighter = None;
     let mut body = String::new();
     let mut paragraph: Option<InlineBuffer> = None;
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
@@ -87,7 +91,9 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> String {
                         max_code_columns(options),
                         max_code_lines(options),
                         options.line_numbers,
-                    ));
+                        options.code_theme,
+                        &mut liquid_highlighter,
+                    )?);
                 }
                 _ => {}
             }
@@ -301,7 +307,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> String {
         }
     }
 
-    format!("{}\n{}", template(options), body)
+    Ok(format!("{}\n{}", template(options), body))
 }
 
 fn template(options: &TypstOptions) -> String {
@@ -329,14 +335,7 @@ fn template(options: &TypstOptions) -> String {
 ]"#,
         escape_markup_text(&options.footer)
     );
-    let code_fill = match options.code_theme {
-        CodeTheme::Dark => "#101828",
-        CodeTheme::Light => "#F4F6F8",
-    };
-    let code_text = match options.code_theme {
-        CodeTheme::Dark => "#E4E7EC",
-        CodeTheme::Light => "#17202A",
-    };
+    let (code_fill, code_text) = code_palette(options.code_theme);
     let raw_theme = match options.code_theme {
         CodeTheme::Dark => "#set raw(theme: \"md2pdf-dark.tmTheme\")",
         CodeTheme::Light => "",
@@ -407,7 +406,10 @@ fn code_block(
     max_columns: usize,
     max_lines: usize,
     line_numbers: bool,
-) -> String {
+    theme: CodeTheme,
+    liquid_highlighter: &mut Option<SyntaxHighlighter>,
+) -> Result<String> {
+    let language = normalize_fence_language(language);
     let mut source = wrap_code(source.trim_end_matches('\n'), max_columns);
     if line_numbers {
         source = source
@@ -431,14 +433,84 @@ fn code_block(
         if index > 0 {
             output.push_str("#v(5pt, weak: true)\n");
         }
-        output.push_str(&format!(
-            "#raw(block: true, lang: {}, {})\n",
-            typst_string(language),
-            typst_string(chunk)
-        ));
+        if is_liquid_language(&language) {
+            let highlighter = match liquid_highlighter {
+                Some(highlighter) => highlighter,
+                None => liquid_highlighter.insert(SyntaxHighlighter::new(theme)?),
+            };
+            let lines = highlighter.highlight(chunk, "liquid")?;
+            output.push_str(&highlighted_code_frame(&lines, theme));
+        } else {
+            output.push_str(&format!(
+                "#raw(block: true, lang: {}, {})\n",
+                typst_string(&language),
+                typst_string(chunk)
+            ));
+        }
     }
     output.push_str("#v(18pt, weak: true)\n\n");
+    Ok(output)
+}
+
+fn highlighted_code_frame(lines: &[Vec<StyledToken>], theme: CodeTheme) -> String {
+    let (fill, foreground) = code_palette(theme);
+    let mut output = format!(
+        "#block(width: 100%, fill: rgb(\"{fill}\"), inset: 9pt, \
+         radius: 2pt, breakable: false)[\n\
+         #set text(font: \"DejaVu Sans Mono\", size: 7.3pt, \
+         fill: rgb(\"{foreground}\"))\n\
+         #set par(leading: 0.2em, spacing: 0pt)\n"
+    );
+    for (line_index, line) in lines.iter().enumerate() {
+        if line_index > 0 {
+            output.push_str("#linebreak()");
+        }
+        for token in line {
+            output.push_str(&styled_token(token));
+        }
+    }
+    output.push_str("\n]\n");
     output
+}
+
+fn code_palette(theme: CodeTheme) -> (&'static str, &'static str) {
+    match theme {
+        CodeTheme::Dark => ("#0D1117", "#E6EDF3"),
+        CodeTheme::Light => ("#F6F8FA", "#1F2328"),
+    }
+}
+
+fn is_liquid_language(language: &str) -> bool {
+    matches!(
+        language.trim().to_ascii_lowercase().as_str(),
+        "liquid" | "shopify-liquid"
+    )
+}
+
+fn normalize_fence_language(language: &str) -> String {
+    let trimmed = language.trim().trim_start_matches('.');
+    trimmed
+        .strip_prefix("language-")
+        .unwrap_or(trimmed)
+        .to_ascii_lowercase()
+}
+
+fn styled_token(token: &StyledToken) -> String {
+    let mut body = format!("#raw({})", typst_string(&token.content));
+    if token.underline {
+        body = format!("#underline[{body}]");
+    }
+    if token.strikethrough {
+        body = format!("#strike[{body}]");
+    }
+    let mut properties = vec![format!("fill: rgb({})", typst_string(&token.color))];
+    if token.bold {
+        properties.push("weight: \"bold\"".to_owned());
+    }
+    if token.italic {
+        properties.push("style: \"italic\"".to_owned());
+    }
+    format!("#text({})[{body}]", properties.join(", "))
 }
 
 fn max_code_columns(options: &TypstOptions) -> usize {
@@ -605,11 +677,12 @@ mod tests {
         let source = to_typst(
             "# Test\n\nAn **example** with a [link](https://example.com).\n\n```rust\nfn main() {}\n```",
             &options(),
-        );
+        )
+        .expect("valid bundled highlighter");
         assert!(source.contains("= #text(\"Test\")"));
         assert!(source.contains("#link(\"https://example.com\")"));
-        assert!(source.contains("lang: \"rust\""));
         assert!(source.contains("1 │ fn main() {}"));
+        assert!(source.contains("lang: \"rust\""));
     }
 
     #[test]
@@ -629,7 +702,17 @@ mod tests {
             .map(|line| format!("let value_{line} = {line};"))
             .collect::<Vec<_>>()
             .join("\n");
-        let typst = code_block(&code, "rust", 100, 50, true);
+        let mut highlighter = None;
+        let typst = code_block(
+            &code,
+            "rust",
+            100,
+            50,
+            true,
+            CodeTheme::Dark,
+            &mut highlighter,
+        )
+        .expect("highlight code");
         assert_eq!(typst.matches("#raw(block: true").count(), 3);
         assert!(typst.contains("120 │ let value_120 = 120;"));
     }
@@ -644,14 +727,16 @@ mod tests {
 
     #[test]
     fn renders_standalone_images_as_spaced_blocks() {
-        let typst = to_typst("# Image\n\n![Example](diagram.svg)", &options());
+        let typst = to_typst("# Image\n\n![Example](diagram.svg)", &options())
+            .expect("valid bundled highlighter");
         assert!(typst.contains("#image(\"diagram.svg\", width: 90%)"));
         assert!(typst.contains("above: 7pt, below: 18pt"));
     }
 
     #[test]
     fn uses_each_code_background_declaration_once() {
-        let typst = to_typst("# Code\n\n```rust\nfn main() {}\n```", &options());
-        assert_eq!(typst.matches("fill: rgb(\"#101828\")").count(), 1);
+        let typst = to_typst("# Code\n\n```rust\nfn main() {}\n```", &options())
+            .expect("valid bundled highlighter");
+        assert_eq!(typst.matches("fill: rgb(\"#0D1117\")").count(), 1);
     }
 }

@@ -14,6 +14,9 @@ use md2pdf::{
     pdf,
 };
 
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
@@ -57,7 +60,7 @@ fn run(cli: Cli) -> Result<()> {
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
         },
-    );
+    )?;
     let pages = pdf::render(&typst, &output, &source_dir)?;
     if !cli.quiet {
         println!(

@@ -30,6 +30,7 @@ pub fn render(source: &str, output: &Path, source_dir: &Path) -> Result<usize> {
     let document = result
         .output
         .map_err(|error| Error::Pdf(format!("{error:?}")))?;
+    drop(engine);
     let page_count = document.pages().len();
     let bytes = typst_pdf::pdf(&document, &Default::default())
         .map_err(|error| Error::Pdf(format!("{error:?}")))?;

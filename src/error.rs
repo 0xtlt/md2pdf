@@ -24,6 +24,9 @@ pub enum Error {
     /// The accent color is not a hexadecimal `#RRGGBB` value.
     #[error("--accent must be a valid #RRGGBB color")]
     InvalidAccent,
+    /// Loading a bundled grammar or highlighting a code block failed.
+    #[error("syntax highlighting failed: {0}")]
+    Highlight(String),
     /// Reading the Markdown source failed.
     #[error("failed to read {path}: {source}")]
     Read {
