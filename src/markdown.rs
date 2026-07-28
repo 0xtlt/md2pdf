@@ -338,8 +338,11 @@ fn template(options: &TypstOptions) -> String {
         CodeTheme::Light => "#17202A",
     };
     let raw_theme = match options.code_theme {
-        CodeTheme::Dark => "#set raw(theme: \"md2pdf-dark.tmTheme\")",
-        CodeTheme::Light => "",
+        CodeTheme::Dark => {
+            "#set raw(theme: \"md2pdf-dark.tmTheme\", \
+             syntaxes: \"md2pdf-rust.sublime-syntax\")"
+        }
+        CodeTheme::Light => "#set raw(syntaxes: \"md2pdf-rust.sublime-syntax\")",
     };
     format!(
         r##"#let accent = rgb("{accent}")

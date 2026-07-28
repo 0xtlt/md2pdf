@@ -12,8 +12,10 @@ Markdown
   -> PDF serialization
 ```
 
-The binary embeds the DejaVu fonts and dark syntax theme. The target machine
-does not need Python, a browser, LaTeX, or the Typst executable.
+The binary embeds the DejaVu fonts, dark syntax theme, and a compact Rust syntax
+definition. Other languages use Typst's built-in syntax collection as a
+fallback. The target machine does not need Python, a browser, LaTeX, or the
+Typst executable.
 
 ## Modules
 
@@ -51,6 +53,18 @@ documents.
 Image paths are resolved relative to the Markdown file. With standard input,
 they are resolved from the current directory. Network resources are not
 fetched.
+
+## Memory and allocation strategy
+
+The release binary uses jemalloc for Rust and supported native allocations.
+This reduces allocator fragmentation during Typst's allocation-heavy page
+layout. Rust code blocks use the embedded targeted syntax definition, avoiding
+initialization of the full syntax collection when it is unnecessary. The Typst
+engine is dropped as soon as compilation produces an owned paged document.
+
+Typst still materializes the complete paged document before serialization.
+Peak memory therefore scales with page count and content complexity, especially
+for syntax-highlighted code and auto-sized tables.
 
 ## Invariants
 

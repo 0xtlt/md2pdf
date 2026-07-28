@@ -125,6 +125,22 @@ Fonts and the syntax theme are compiled into the executable. See the
 [architecture documentation](docs/architecture.md) for design choices and
 layout invariants.
 
+## Performance
+
+Version 3.1 reduces both memory use and conversion time without changing the
+default layout or removing syntax highlighting. On an Apple M4 Pro, compared
+with version 3.0.1:
+
+| Workload | Peak RAM | Median time | CPU cycles |
+| --- | ---: | ---: | ---: |
+| Small, 1 page | 42.4 → 32.3 MiB | 36.1 → 15.7 ms | 133.8 → 55.3 million |
+| Medium, 40 pages | 89.4 → 72.1 MiB | 183.6 → 100.3 ms | 744.0 → 408.4 million |
+| Large, 240 pages | 310.7 → 262.8 MiB | 942.2 → 529.7 ms | 3.87 → 2.22 billion |
+
+Each median uses ten fresh-process executions after two warm-ups. Peak resident
+memory and CPU cycles are measured in a separate successful run with macOS
+`/usr/bin/time -lp`.
+
 ## Development
 
 ```console

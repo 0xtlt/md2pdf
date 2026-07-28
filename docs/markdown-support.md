@@ -23,8 +23,9 @@
 
 ## Code blocks
 
-Language identifiers recognized by Typst receive syntax highlighting. Long
-lines are wrapped visually. `--line-numbers` numbers visual lines and is
+Rust uses a compact embedded syntax definition optimized for startup and memory.
+Other language identifiers recognized by Typst use its built-in syntax
+highlighters. Long lines are wrapped visually. `--line-numbers` numbers visual lines and is
 disabled by default.
 
 ## Images
