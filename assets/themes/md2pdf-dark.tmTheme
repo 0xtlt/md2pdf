@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>name</key><string>md2pdf dark</string>
+  <key>settings</key>
+  <array>
+    <dict><key>settings</key><dict>
+      <key>background</key><string>#101828</string>
+      <key>foreground</key><string>#E4E7EC</string>
+    </dict></dict>
+    <dict><key>scope</key><string>comment, punctuation.definition.comment</string>
+      <key>settings</key><dict><key>foreground</key><string>#98A2B3</string></dict></dict>
+    <dict><key>scope</key><string>keyword, storage.type, storage.modifier</string>
+      <key>settings</key><dict><key>foreground</key><string>#C084FC</string></dict></dict>
+    <dict><key>scope</key><string>string, punctuation.definition.string</string>
+      <key>settings</key><dict><key>foreground</key><string>#86EFAC</string></dict></dict>
+    <dict><key>scope</key><string>constant.numeric, constant.language, constant.character</string>
+      <key>settings</key><dict><key>foreground</key><string>#FBBF24</string></dict></dict>
+    <dict><key>scope</key><string>entity.name.function, support.function</string>
+      <key>settings</key><dict><key>foreground</key><string>#67E8F9</string></dict></dict>
+    <dict><key>scope</key><string>support.type, support.class, entity.name.type, entity.name.class</string>
+      <key>settings</key><dict><key>foreground</key><string>#7DD3FC</string></dict></dict>
+    <dict><key>scope</key><string>keyword.operator, punctuation.separator, punctuation.accessor</string>
+      <key>settings</key><dict><key>foreground</key><string>#FDA4AF</string></dict></dict>
+    <dict><key>scope</key><string>variable.parameter</string>
+      <key>settings</key><dict><key>foreground</key><string>#FDE68A</string></dict></dict>
+  </array>
+</dict>
+</plist>

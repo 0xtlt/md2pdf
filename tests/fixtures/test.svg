@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180">
+  <rect width="640" height="180" rx="18" fill="#17202A"/>
+  <circle cx="82" cy="90" r="46" fill="#C94C35"/>
+  <text x="150" y="105" font-family="sans-serif" font-size="46" fill="white">md2pdf Rust</text>
+</svg>
