@@ -561,8 +561,6 @@ fn heading_number(level: HeadingLevel) -> usize {
 fn is_expected_result(plain: &str) -> bool {
     let value = plain.trim_start().to_lowercase();
     value.starts_with("expected result:")
-        || value.starts_with("résultat attendu :")
-        || value.starts_with("résultat attendu:")
 }
 
 fn parser_options() -> Options {
@@ -596,16 +594,16 @@ mod tests {
     #[test]
     fn extracts_plain_title() {
         assert_eq!(
-            first_title("# **Titre** `Rust`\n\nTexte").as_deref(),
-            Some("Titre Rust")
+            first_title("# **Title** `Rust`\n\nText").as_deref(),
+            Some("Title Rust")
         );
-        assert_eq!(first_title("Sans titre"), None);
+        assert_eq!(first_title("No title"), None);
     }
 
     #[test]
     fn converts_markdown_and_code() {
         let source = to_typst(
-            "# Test\n\nUn **texte** avec [lien](https://example.com).\n\n```rust\nfn main() {}\n```",
+            "# Test\n\nAn **example** with a [link](https://example.com).\n\n```rust\nfn main() {}\n```",
             &options(),
         );
         assert!(source.contains("= #text(\"Test\")"));
@@ -617,11 +615,11 @@ mod tests {
     #[test]
     fn wraps_long_code_without_splitting_unicode() {
         let wrapped = wrap_code(
-            "let café = \"une ligne vraiment beaucoup trop longue pour la colonne\";",
+            "let cafe = \"a line that is far too long to fit inside the code column\";",
             24,
         );
         assert!(wrapped.lines().all(|line| line.chars().count() <= 24));
-        assert!(wrapped.contains("café"));
+        assert!(wrapped.contains("cafe"));
         assert!(wrapped.lines().count() >= 3);
     }
 

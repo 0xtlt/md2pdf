@@ -1,26 +1,26 @@
-# Validation complète
+# Complete Validation
 
-![Bannière de test](test.svg)
+![Test banner](test.svg)
 
 ## Markdown
 
-- [x] tâche terminée ;
-- [ ] tâche restante ;
-- lien [Rust](https://www.rust-lang.org/) ;
-- texte ~~barré~~, **gras**, *italique* et `inline`.
+- [x] completed task;
+- [ ] remaining task;
+- [Rust link](https://www.rust-lang.org/);
+- ~~strikethrough~~, **bold**, *italic*, and `inline code`.
 
-| Option | Valeur |
+| Option | Value |
 | --- | --- |
 | Format | A4 |
-| Unicode | éèàçù € → ✓ |
+| Unicode | € → ✓ |
 
-> Un encadré qui doit rester lisible même lorsqu’il contient plusieurs mots et
-> passe éventuellement sur une nouvelle ligne.
+> A callout that remains readable even when it contains enough text to wrap
+> onto another line.
 
-## Longue ligne de code
+## Long Code Line
 
 ```rust
-let valeur_extremement_longue = "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz";
+let extremely_long_value = "abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz_abcdefghijklmnopqrstuvwxyz";
 ```
 
-**Expected result:** image, lien, tableau, Unicode et code sont présents.
+**Expected result:** image, link, table, Unicode, and code are present.

@@ -1,26 +1,26 @@
-# Guide de rendu md2pdf
+# md2pdf Rendering Guide
 
-Un PDF **net**, compact et reproductible, avec des [liens
-cliquables](https://www.rust-lang.org/) et du `code inline`.
+A **polished**, compact, and reproducible PDF with [clickable
+links](https://www.rust-lang.org/) and `inline code`.
 
-## Éléments Markdown
+## Markdown Elements
 
-> Cet encadré attire l’attention sans interrompre la lecture.
+> This callout draws attention without interrupting the reading flow.
 
-1. Les listes ordonnées conservent leur séquence.
-2. Les listes peuvent contenir des éléments techniques :
-   - sous-élément avec *emphase* ;
-   - second sous-élément.
+1. Ordered lists preserve their sequence.
+2. Lists can contain technical details:
+   - a nested item with *emphasis*;
+   - a second nested item.
 
-| Fonction | État | Détail |
+| Feature | Status | Details |
 | --- | :---: | --- |
-| Unicode | OK | Accents : éèàçù, symboles : € → ✓ |
-| Tableaux | OK | En-tête répété si le tableau change de page |
-| Code | OK | Coloration et repli visuel |
+| Unicode | OK | Symbols: € → ✓, multilingual text supported |
+| Tables | OK | Structured rows with a highlighted header |
+| Code | OK | Highlighting and visual line wrapping |
 
-**Résultat attendu :** le document reste lisible à l’écran et à l’impression.
+**Expected result:** the document remains readable on screen and in print.
 
-## Coloration syntaxique
+## Syntax Highlighting
 
 ```rust
 #[derive(Debug)]
@@ -30,12 +30,12 @@ struct Message<'a> {
 }
 
 fn render(message: &Message<'_>) -> String {
-    // Une longue ligne est repliée visuellement sans être tronquée dans le PDF.
-    format!("Bonjour {} : {}", message.recipient, message.body)
+    // A long line is wrapped visually instead of being clipped in the PDF.
+    format!("Hello, {}: {}", message.recipient, message.body)
 }
 
 fn main() {
-    let message = Message { recipient: "Monde", body: "Le PDF est prêt." };
+    let message = Message { recipient: "World", body: "The PDF is ready." };
     println!("{}", render(&message));
 }
 ```
@@ -50,6 +50,6 @@ let labels: Vec<_> = items
 
 ---
 
-### Fin du document
+### End of Document
 
-La pagination, l’en-tête et le pied de page sont ajoutés automatiquement.
+Pagination, headers, and footers are added automatically.

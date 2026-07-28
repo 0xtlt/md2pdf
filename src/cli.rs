@@ -25,69 +25,69 @@ pub enum CodeTheme {
 #[command(
     name = "md2pdf",
     version,
-    about = "Convertit du Markdown en PDF net avec coloration syntaxique."
+    about = "Converts Markdown into a polished PDF with syntax highlighting."
 )]
 pub struct Cli {
-    /// Markdown source, ou - pour stdin
+    /// Markdown source, or - for standard input
     pub source: Option<PathBuf>,
 
-    /// Ancienne syntaxe compatible
+    /// Legacy input syntax kept for compatibility
     #[arg(short = 'i', long = "input", hide = true)]
     pub legacy_source: Option<PathBuf>,
 
-    /// PDF de sortie
+    /// Output PDF path
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Titre des métadonnées PDF
+    /// PDF metadata title
     #[arg(long)]
     pub title: Option<String>,
 
-    /// Auteur des métadonnées PDF
+    /// PDF metadata author
     #[arg(long, default_value = "")]
     pub author: String,
 
-    /// Texte d'en-tête
+    /// Page header text
     #[arg(long, default_value = "TECHNICAL DOCUMENTATION")]
     pub label: String,
 
-    /// Texte de pied de page
+    /// Page footer text
     #[arg(long)]
     pub footer: Option<String>,
 
-    /// Format de page
+    /// Page format
     #[arg(long, value_enum, default_value_t = PageSize::A4)]
     pub page_size: PageSize,
 
-    /// Orientation paysage
+    /// Use landscape orientation
     #[arg(long)]
     pub landscape: bool,
 
-    /// Marges en millimètres
+    /// Page margins in millimetres
     #[arg(long, default_value_t = 17.0)]
     pub margin: f32,
 
-    /// Couleur d'accentuation
+    /// Accent color
     #[arg(long, default_value = "#C94C35")]
     pub accent: String,
 
-    /// Thème des blocs de code
+    /// Code block theme
     #[arg(long, value_enum, default_value_t = CodeTheme::Dark)]
     pub code_theme: CodeTheme,
 
-    /// Numéroter les lignes de code
+    /// Add line numbers to code blocks
     #[arg(long)]
     pub line_numbers: bool,
 
-    /// Masquer l'en-tête
+    /// Hide the page header
     #[arg(long)]
     pub no_header: bool,
 
-    /// Nouvelle page avant les titres ## commençant par PREFIX
+    /// Start a new page before ## headings beginning with PREFIX
     #[arg(long = "page-break-before", value_name = "PREFIX")]
     pub page_break_before: Vec<String>,
 
-    /// Ne rien afficher en cas de succès
+    /// Suppress success output
     #[arg(short, long)]
     pub quiet: bool,
 }

@@ -1,64 +1,61 @@
 # Architecture
 
-## Vue d'ensemble
+## Overview
 
-`md2pdf` utilise un pipeline sans processus externe :
+`md2pdf` uses an in-process pipeline:
 
 ```text
 Markdown
-  -> événements pulldown-cmark
-  -> document Typst en mémoire
-  -> mise en page Typst
-  -> sérialisation PDF
+  -> pulldown-cmark events
+  -> in-memory Typst document
+  -> Typst page layout
+  -> PDF serialization
 ```
 
-Le binaire embarque les polices DejaVu et le thème sombre. La machine cible n'a
-donc besoin ni de Python, ni de navigateur, ni de LaTeX, ni de l'exécutable
-Typst.
+The binary embeds the DejaVu fonts and dark syntax theme. The target machine
+does not need Python, a browser, LaTeX, or the Typst executable.
 
 ## Modules
 
-| Module | Responsabilité |
+| Module | Responsibility |
 | --- | --- |
-| `cli` | Déclaration des arguments et valeurs autorisées |
-| `markdown` | Conversion des événements Markdown en source Typst |
-| `pdf` | Compilation Typst, résolution des fichiers et écriture PDF |
-| `error` | Erreurs structurées et messages destinés à la CLI |
-| `main` | Validation, lecture de l'entrée et orchestration |
+| `cli` | Command-line arguments and accepted values |
+| `markdown` | Markdown event conversion into Typst source |
+| `pdf` | Typst compilation, file resolution, and PDF writing |
+| `error` | Structured errors and user-facing CLI messages |
+| `main` | Validation, input handling, and orchestration |
 
-## Conversion Markdown
+## Markdown conversion
 
-Le parseur `pulldown-cmark` produit une suite d'événements. Le convertisseur
-maintient uniquement l'état nécessaire au contexte courant : paragraphe, titre,
-bloc de code, image, liste et tableau.
+`pulldown-cmark` produces a stream of events. The converter only keeps state for
+the current paragraph, heading, code block, image, list, or table.
 
-Le texte utilisateur n'est jamais injecté directement dans la syntaxe Typst.
-Les guillemets, barres obliques inverses, retours à la ligne et tabulations sont
-échappés avant génération.
+User text is never inserted directly into Typst syntax. Quotes, backslashes,
+line breaks, carriage returns, and tabs are escaped before source generation.
 
-## Mise en page du code
+## Code layout
 
-Typst ne replie pas automatiquement les blocs `raw`. Le convertisseur :
+Typst does not automatically wrap `raw` blocks. The converter:
 
-1. calcule la largeur disponible selon la page et les marges ;
-2. replie les lignes trop longues sur une frontière Unicode sûre ;
-3. découpe les très grands blocs en fragments tenant sur une page ;
-4. conserve une faible séparation entre fragments du même bloc ;
-5. applique un espacement plus large entre deux blocs Markdown distincts.
+1. calculates available width from the page size and margins;
+2. wraps long lines at a Unicode-safe boundary;
+3. splits very large blocks into page-safe chunks;
+4. keeps chunks from the same source block visually connected;
+5. applies wider spacing between separate Markdown code blocks.
 
-Ce découpage évite le texte rogné et maintient les en-têtes et pieds de page sur
-les documents multipages.
+This avoids clipped text and preserves page headers and footers in long
+documents.
 
-## Ressources
+## Resources
 
-Les chemins d'images sont résolus relativement au dossier du fichier Markdown.
-Avec stdin, ils sont résolus depuis le dossier courant. Les ressources réseau
-ne sont pas récupérées.
+Image paths are resolved relative to the Markdown file. With standard input,
+they are resolved from the current directory. Network resources are not
+fetched.
 
 ## Invariants
 
-- les numéros de ligne sont désactivés par défaut ;
-- aucune ligne de code ne doit dépasser la zone imprimable ;
-- les fragments de code sont indivisibles à l'intérieur d'une page ;
-- les dossiers parents du PDF sont créés automatiquement ;
-- une erreur produit le code de sortie `2` et aucun faux succès.
+- line numbers are disabled by default;
+- code cannot exceed the printable width;
+- each code chunk remains indivisible within a page;
+- missing output directories are created automatically;
+- failures return exit code `2` and never report false success.

@@ -1,23 +1,22 @@
-# Politique de sécurité
+# Security policy
 
-## Signaler une vulnérabilité
+## Reporting a vulnerability
 
-N'ouvrez pas d'issue publique pour une vulnérabilité exploitable. Utilisez la
-fonction **Report a vulnerability** de l'onglet Security du dépôt GitHub.
+Do not open a public issue for an exploitable vulnerability. Use **Report a
+vulnerability** in the repository's Security tab.
 
-Indiquez :
+Include:
 
-- la version ou le commit concerné ;
-- un scénario de reproduction minimal ;
-- l'impact observé ;
-- toute piste de correction disponible.
+- the affected version or commit;
+- a minimal reproduction;
+- the observed impact;
+- any available remediation ideas.
 
-Un accusé de réception sera donné dès que possible. La publication du détail
-technique doit attendre qu'un correctif soit disponible.
+The report will be acknowledged as soon as possible. Please wait until a fix is
+available before publishing technical details.
 
-## Périmètre
+## Scope
 
-Les problèmes de parsing de fichiers non fiables, de résolution de chemins,
-d'écriture de fichiers et de génération PDF sont dans le périmètre. Les défauts
-purement esthétiques sans impact de sécurité doivent être signalés comme issues
-ordinaires.
+Parsing untrusted files, path resolution, file writes, and PDF generation are
+in scope. Purely visual defects without security impact should be reported as
+regular issues.

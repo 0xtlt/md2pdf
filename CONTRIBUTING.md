@@ -1,11 +1,11 @@
-# Contribuer à md2pdf
+# Contributing to md2pdf
 
-Merci de contribuer au projet. Une modification doit rester ciblée, testée et
-compatible avec le caractère autonome du binaire.
+Thank you for contributing. Changes should remain focused, tested, and
+compatible with the standalone nature of the executable.
 
-## Préparer l'environnement
+## Set up the project
 
-Rust stable et Git sont requis :
+Rust stable and Git are required:
 
 ```console
 git clone https://github.com/0xtlt/md2pdf.git
@@ -15,13 +15,13 @@ cargo test --locked
 
 ## Workflow
 
-1. Créez une branche courte depuis `main`.
-2. Ajoutez ou adaptez les tests avant de modifier le comportement.
-3. Formatez le code avec `cargo fmt`.
-4. Exécutez la suite qualité complète.
-5. Ouvrez une pull request décrivant le problème et la solution.
+1. Create a short branch from `main`.
+2. Add or update tests before changing behavior.
+3. Format the code with `cargo fmt`.
+4. Run the complete quality gate.
+5. Open a pull request describing the problem and the solution.
 
-## Suite qualité
+## Quality gate
 
 ```console
 cargo fmt --check
@@ -30,20 +30,19 @@ cargo test --locked
 RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 ```
 
-Pour une modification visuelle, générez également `example.pdf`, rendez toutes
-ses pages en images avec Poppler et vérifiez l'absence de débordement, de
-collision ou d'espacement incohérent.
+For visual changes, also generate `example.pdf`, render every page to images
+with Poppler, and check for overflow, collisions, clipping, and inconsistent
+spacing.
 
 ## Style
 
-- préférez les fonctions courtes et les noms explicites ;
-- documentez toute API publique ;
-- évitez les dépendances lorsqu'une petite implémentation sûre suffit ;
-- conservez les messages CLI destinés aux utilisateurs en français ;
-- n'ajoutez aucun runtime externe au chemin d'exécution.
+- prefer short functions and explicit names;
+- document every public API;
+- avoid dependencies when a small, safe implementation is sufficient;
+- keep all user-facing CLI messages in English;
+- do not add an external runtime to the execution path.
 
 ## Tests
 
-Un correctif doit inclure un test qui échoue avant la correction. Les tests
-d'intégration doivent invoquer le véritable exécutable et utiliser un dossier
-temporaire.
+A bug fix should include a test that fails before the fix. Integration tests
+should invoke the real executable and use a temporary directory.

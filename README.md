@@ -4,46 +4,46 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2024-orange.svg)](https://www.rust-lang.org/)
 
-Un convertisseur Markdown vers PDF rapide et autonome, écrit intégralement en
-Rust. Il produit des documents nets avec pagination, images locales, tableaux,
-liens cliquables et coloration syntaxique.
+A fast, standalone Markdown-to-PDF converter written entirely in Rust. It
+produces polished documents with pagination, local images, tables, clickable
+links, and syntax highlighting.
 
-**Aucun Python, navigateur, LaTeX ou runtime externe n'est nécessaire.**
+**No Python, browser, LaTeX, or external runtime is required.**
 
-![Aperçu du PDF généré](docs/assets/preview.png)
+![Generated PDF preview](docs/assets/preview.png)
 
-## Démarrage rapide
+## Quick start
 
 ```console
 cargo build --release
 ./target/release/md2pdf example.md
 ```
 
-Le PDF est créé à côté du fichier Markdown. Pour choisir son emplacement :
+The PDF is created next to the Markdown source. To choose another destination:
 
 ```console
 md2pdf document.md --output build/document.pdf
 ```
 
-## Fonctionnalités
+## Features
 
-- moteur PDF Typst embarqué et polices DejaVu intégrées ;
-- coloration syntaxique sombre ou claire ;
-- repli automatique des longues lignes de code ;
-- pagination sûre des grands blocs de code ;
-- liens PDF cliquables et images résolues relativement au Markdown ;
-- formats A4 et Letter, portrait ou paysage ;
-- métadonnées, en-tête, pied de page et couleur d'accent personnalisables ;
-- lecture depuis un fichier ou l'entrée standard.
+- embedded Typst PDF engine and DejaVu fonts;
+- dark or light syntax highlighting;
+- automatic wrapping for long code lines;
+- page-safe splitting for large code blocks;
+- clickable PDF links and source-relative local images;
+- A4 and Letter formats in portrait or landscape;
+- customizable metadata, header, footer, margins, and accent color;
+- file or standard-input sources.
 
-Les numéros de ligne sont **désactivés par défaut**. Ils n'apparaissent qu'avec
-`--line-numbers`.
+Line numbers are **disabled by default**. They only appear when
+`--line-numbers` is explicitly supplied.
 
 ## Installation
 
-### Depuis les sources
+### From source
 
-Rust stable est requis :
+Rust stable is required:
 
 ```console
 git clone https://github.com/0xtlt/md2pdf.git
@@ -51,81 +51,81 @@ cd md2pdf
 cargo install --path .
 ```
 
-### Exécutable local optimisé
+### Optimized local binary
 
 ```console
 cargo build --release
 ./target/release/md2pdf --version
 ```
 
-L'exécutable final se trouve dans `target/release/md2pdf`.
+The resulting executable is available at `target/release/md2pdf`.
 
-## Utilisation
+## Usage
 
 ```text
 md2pdf [OPTIONS] [SOURCE]
 ```
 
-Exemples :
+Examples:
 
 ```console
-# Réglages par défaut
+# Default settings
 md2pdf document.md
 
-# Thème clair et couleur personnalisée
+# Light code theme and a custom accent
 md2pdf document.md --code-theme light --accent '#2563EB'
 
-# Letter paysage
+# Landscape US Letter
 md2pdf document.md --page-size letter --landscape
 
-# Entrée standard
+# Standard input
 cat document.md | md2pdf - --output document.pdf
 
-# Numéros de ligne explicitement demandés
+# Explicitly enable line numbers
 md2pdf document.md --line-numbers
 ```
 
-Options principales :
+Key options:
 
-| Option | Valeur par défaut | Description |
+| Option | Default | Description |
 | --- | --- | --- |
-| `-o, --output PATH` | source avec extension `.pdf` | Chemin du PDF |
-| `--title TEXT` | premier titre `#` | Métadonnée de titre |
-| `--author TEXT` | vide | Métadonnée d'auteur |
-| `--page-size a4\|letter` | `a4` | Format de page |
-| `--landscape` | désactivé | Orientation paysage |
-| `--margin MM` | `17` | Marges entre 8 et 45 mm |
-| `--accent '#RRGGBB'` | `#C94C35` | Couleur des titres |
-| `--code-theme dark\|light` | `dark` | Thème des blocs de code |
-| `--line-numbers` | désactivé | Ajoute les numéros de ligne |
-| `--no-header` | désactivé | Masque l'en-tête |
-| `--page-break-before PREFIX` | aucun | Nouvelle page avant certains `##` |
-| `-q, --quiet` | désactivé | Masque le message de succès |
+| `-o, --output PATH` | source with `.pdf` extension | Output PDF path |
+| `--title TEXT` | first `#` heading | PDF metadata title |
+| `--author TEXT` | empty | PDF metadata author |
+| `--page-size a4\|letter` | `a4` | Page format |
+| `--landscape` | disabled | Landscape orientation |
+| `--margin MM` | `17` | Margins between 8 and 45 mm |
+| `--accent '#RRGGBB'` | `#C94C35` | Heading and callout color |
+| `--code-theme dark\|light` | `dark` | Code block theme |
+| `--line-numbers` | disabled | Add code line numbers |
+| `--no-header` | disabled | Hide the page header |
+| `--page-break-before PREFIX` | none | New page before matching `##` headings |
+| `-q, --quiet` | disabled | Suppress success output |
 
-Consultez `md2pdf --help` pour la liste complète.
+Run `md2pdf --help` for the complete list.
 
-## Markdown pris en charge
+## Supported Markdown
 
-Titres, paragraphes, emphase, texte barré, liens, images locales, listes
-imbriquées, cases à cocher, tableaux, citations, séparateurs, code en ligne et
-blocs de code balisés sont pris en charge.
+Headings, paragraphs, emphasis, strikethrough, links, local images, nested
+lists, task lists, tables, block quotes, horizontal rules, inline code, and
+fenced code blocks are supported.
 
-La [matrice Markdown détaillée](docs/markdown-support.md) documente les
-comportements et limites connus.
+The detailed [Markdown support matrix](docs/markdown-support.md) documents
+behavior and known limitations.
 
 ## Architecture
 
-Le pipeline reste volontairement simple :
+The pipeline is intentionally straightforward:
 
 ```text
-Markdown -> pulldown-cmark -> source Typst -> moteur Typst embarqué -> PDF
+Markdown -> pulldown-cmark -> Typst source -> embedded Typst engine -> PDF
 ```
 
-Les polices et le thème de coloration sont inclus dans l'exécutable. Consultez
-la [documentation d'architecture](docs/architecture.md) pour les choix de
-conception et les invariants de mise en page.
+Fonts and the syntax theme are compiled into the executable. See the
+[architecture documentation](docs/architecture.md) for design choices and
+layout invariants.
 
-## Développement
+## Development
 
 ```console
 cargo fmt --check
@@ -134,22 +134,21 @@ cargo test --locked
 RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 ```
 
-Les tests couvrent le parseur Markdown, l'échappement Typst, le repli et la
-pagination du code, les images relatives, l'entrée standard, les erreurs CLI et
-la production effective d'un PDF.
+Tests cover Markdown parsing, Typst escaping, code wrapping and pagination,
+relative images, standard input, CLI errors, and actual PDF generation.
 
-Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour le workflow complet.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete workflow.
 
-## Limites
+## Limitations
 
-- les images distantes ne sont pas téléchargées ;
-- le HTML brut est rendu comme texte, pas interprété ;
-- le repli des longues lignes de code est visuel et peut ajouter des lignes ;
-- les polices embarquées privilégient la lisibilité et la couverture Unicode
-  courante plutôt qu'un choix typographique configurable.
+- remote images are not downloaded;
+- raw HTML is displayed as text rather than interpreted;
+- visual wrapping of long code lines can add rendered lines;
+- embedded fonts prioritize readability and common Unicode coverage over
+  configurable typography.
 
-## Licence
+## License
 
-Le code est distribué sous licence [MIT](LICENSE). Les polices DejaVu embarquées
-conservent leur propre licence dans
+The source code is licensed under the [MIT License](LICENSE). The embedded
+DejaVu fonts retain their own license in
 [`assets/fonts/LICENSE_DEJAVU`](assets/fonts/LICENSE_DEJAVU).

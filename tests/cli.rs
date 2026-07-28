@@ -38,7 +38,7 @@ fn creates_a_pdf_from_a_positional_source() {
 fn supports_the_legacy_input_option_and_default_output() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("legacy.md");
-    fs::write(&source, "# Compatible\n\nTexte.").expect("write markdown");
+    fs::write(&source, "# Compatible\n\nText.").expect("write markdown");
 
     let result = binary()
         .arg("--input")

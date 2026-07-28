@@ -1,39 +1,39 @@
-# Couverture Markdown
+# Markdown support
 
-| Élément | Support | Notes |
+| Element | Support | Notes |
 | --- | :---: | --- |
-| Titres `#` à `######` | Oui | Le premier `#` devient le titre PDF |
-| Paragraphes | Oui | Espacement vertical typographique |
-| Gras et italique | Oui | Combinaisons prises en charge |
-| Texte barré | Oui | Extension CommonMark activée |
-| Liens | Oui | Annotations PDF cliquables |
-| Images locales | Oui | Chemins relatifs à la source |
-| Images distantes | Non | Aucun téléchargement réseau |
-| Listes ordonnées | Oui | Imbrication prise en charge |
-| Listes non ordonnées | Oui | Imbrication prise en charge |
-| Cases à cocher | Oui | Symboles Unicode |
-| Tableaux | Oui | En-tête sombre et lignes alternées |
-| Citations | Oui | Encadré avec barre d'accent |
-| Séparateurs | Oui | Ligne horizontale |
-| Code en ligne | Oui | Police monospace |
-| Blocs de code | Oui | Langage lu après les trois accents graves |
-| HTML brut | Partiel | Affiché comme texte |
-| Notes de bas de page | Partiel | Référence en exposant uniquement |
-| Mathématiques | Partiel | Affichées comme contenu brut |
+| Headings `#` through `######` | Yes | The first `#` becomes the PDF title |
+| Paragraphs | Yes | Consistent typographic spacing |
+| Bold and italic | Yes | Combined styles are supported |
+| Strikethrough | Yes | CommonMark extension enabled |
+| Links | Yes | Clickable PDF annotations |
+| Local images | Yes | Paths relative to the source |
+| Remote images | No | No network downloads |
+| Ordered lists | Yes | Nested lists supported |
+| Unordered lists | Yes | Nested lists supported |
+| Task lists | Yes | Rendered with Unicode symbols |
+| Tables | Yes | Dark header and alternating rows |
+| Block quotes | Yes | Callout with an accent rule |
+| Horizontal rules | Yes | Full-width separator |
+| Inline code | Yes | Monospace font |
+| Fenced code blocks | Yes | Language follows the opening fence |
+| Raw HTML | Partial | Displayed as text |
+| Footnotes | Partial | Superscript reference only |
+| Mathematics | Partial | Displayed as raw content |
 
-## Blocs de code
+## Code blocks
 
-Les identifiants de langage reconnus par Typst bénéficient d'une coloration
-syntaxique. Les longues lignes sont repliées visuellement. L'option
-`--line-numbers` numérote les lignes visuelles ; elle est désactivée par défaut.
+Language identifiers recognized by Typst receive syntax highlighting. Long
+lines are wrapped visually. `--line-numbers` numbers visual lines and is
+disabled by default.
 
 ## Images
 
-Les formats pris en charge dépendent du moteur d'image de Typst, notamment PNG,
-JPEG et SVG. Une image seule dans un paragraphe devient un bloc centré. Une
-image au milieu d'un texte est dimensionnée sur la hauteur de la ligne.
+Supported formats follow Typst's image engine and include PNG, JPEG, and SVG. An
+image alone in a paragraph becomes a centered block. An image embedded in text
+is sized to the line height.
 
-## Encadré de résultat
+## Result callout
 
-Un paragraphe commençant par `Résultat attendu :`, `Résultat attendu:` ou
-`Expected result:` reçoit automatiquement un style de validation vert.
+A paragraph beginning with `Expected result:` automatically receives a green
+validation style.

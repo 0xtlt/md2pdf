@@ -18,7 +18,7 @@ fn main() -> ExitCode {
     match run(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("md2pdf: erreur: {error}");
+            eprintln!("md2pdf: error: {error}");
             ExitCode::from(2)
         }
     }
@@ -61,7 +61,7 @@ fn run(cli: Cli) -> Result<()> {
     let pages = pdf::render(&typst, &output, &source_dir)?;
     if !cli.quiet {
         println!(
-            "PDF généré ({pages} page(s)) : {}",
+            "PDF generated ({pages} page(s)): {}",
             absolute(&output).display()
         );
     }

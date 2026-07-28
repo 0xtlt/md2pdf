@@ -4,28 +4,28 @@ use std::path::PathBuf;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// The requested Markdown source does not exist.
-    #[error("fichier Markdown introuvable : {0}")]
+    #[error("Markdown file not found: {0}")]
     InputNotFound(PathBuf),
     /// The Markdown source contains no meaningful content.
-    #[error("le document Markdown est vide")]
+    #[error("the Markdown document is empty")]
     EmptyInput,
     /// Standard input was used without an explicit output path.
-    #[error("--output est obligatoire avec l'entrée standard")]
+    #[error("--output is required when reading from standard input")]
     OutputRequiredForStdin,
     /// Positional input and the legacy `--input` option were both supplied.
-    #[error("utilisez soit SOURCE, soit --input, pas les deux")]
+    #[error("use either SOURCE or --input, not both")]
     ConflictingInputs,
     /// No Markdown source was supplied.
-    #[error("indiquez un fichier Markdown source")]
+    #[error("provide a Markdown source file")]
     MissingInput,
     /// The requested page margin is outside the supported range.
-    #[error("--margin doit être compris entre 8 et 45 mm")]
+    #[error("--margin must be between 8 and 45 mm")]
     InvalidMargin,
     /// The accent color is not a hexadecimal `#RRGGBB` value.
-    #[error("--accent doit être une couleur #RRGGBB valide")]
+    #[error("--accent must be a valid #RRGGBB color")]
     InvalidAccent,
     /// Reading the Markdown source failed.
-    #[error("lecture impossible de {path}: {source}")]
+    #[error("failed to read {path}: {source}")]
     Read {
         /// Path that could not be read.
         path: PathBuf,
@@ -33,7 +33,7 @@ pub enum Error {
         source: std::io::Error,
     },
     /// Creating the output directory or writing the PDF failed.
-    #[error("écriture impossible de {path}: {source}")]
+    #[error("failed to write {path}: {source}")]
     Write {
         /// Path that could not be written.
         path: PathBuf,
@@ -41,7 +41,7 @@ pub enum Error {
         source: std::io::Error,
     },
     /// Typst compilation or PDF serialization failed.
-    #[error("génération PDF impossible : {0}")]
+    #[error("PDF generation failed: {0}")]
     Pdf(String),
 }
 
