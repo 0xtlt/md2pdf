@@ -1,6 +1,6 @@
 # Syntax Highlighting Catalog
 
-The same TextMate engine highlights standalone languages and embedded
+Production TextMate grammars highlight standalone languages and embedded
 languages inside Liquid templates.
 
 ## HTML
