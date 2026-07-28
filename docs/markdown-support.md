@@ -23,10 +23,14 @@
 
 ## Code blocks
 
-Rust uses a compact embedded syntax definition optimized for startup and memory.
-Other language identifiers recognized by Typst use its built-in syntax
-highlighters. Long lines are wrapped visually. `--line-numbers` numbers visual lines and is
-disabled by default.
+Fenced blocks use complete TextMate grammars. The main Syntect/two-face catalog
+supports common systems, web, data, shell, and application languages. Liquid
+uses its full grammar with embedded HTML, CSS, JSON, and JavaScript contexts.
+Unknown identifiers fall back to plain text. Long lines are wrapped visually.
+`--line-numbers` numbers visual lines and is disabled by default.
+
+See [Syntax highlighting](syntax-highlighting.md) for tested identifiers and
+examples.
 
 ## Images
 

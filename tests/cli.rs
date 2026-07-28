@@ -116,6 +116,27 @@ fn renders_an_image_relative_to_the_markdown_source() {
 }
 
 #[test]
+fn renders_the_multilanguage_syntax_catalog() {
+    let directory = tempdir().expect("temporary directory");
+    let output = directory.path().join("syntax-catalog.pdf");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("syntax-catalog.md");
+
+    let result = binary()
+        .arg(fixture)
+        .arg("--output")
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(result.status.success(), "{:?}", result);
+    assert!(fs::metadata(output).expect("PDF metadata").len() > 20_000);
+}
+
+#[test]
 fn rejects_an_invalid_accent_color() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("accent.md");

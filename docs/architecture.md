@@ -7,21 +7,23 @@
 ```text
 Markdown
   -> pulldown-cmark events
+  -> TextMate syntax highlighting
   -> in-memory Typst document
   -> Typst page layout
   -> PDF serialization
 ```
 
-The binary embeds the DejaVu fonts, dark syntax theme, and a compact Rust syntax
-definition. Other languages use Typst's built-in syntax collection as a
-fallback. The target machine does not need Python, a browser, LaTeX, or the
-Typst executable.
+The binary embeds the DejaVu fonts, syntax themes, and a precompiled Liquid
+TextMate grammar. General-purpose fenced code uses Typst's complete
+Syntect/two-face catalog with the native Oniguruma backend. The target machine
+does not need Python, a browser, LaTeX, or the Typst executable.
 
 ## Modules
 
 | Module | Responsibility |
 | --- | --- |
 | `cli` | Command-line arguments and accepted values |
+| `highlight` | Liquid TextMate grammar, themes, and Typst token conversion |
 | `markdown` | Markdown event conversion into Typst source |
 | `pdf` | Typst compilation, file resolution, and PDF writing |
 | `error` | Structured errors and user-facing CLI messages |
@@ -48,6 +50,17 @@ Typst does not automatically wrap `raw` blocks. The converter:
 This avoids clipped text and preserves page headers and footers in long
 documents.
 
+## Syntax architecture
+
+The primary path sends fenced code to Typst's full Syntect/two-face catalog.
+Oniguruma executes the production grammar regexes natively. Liquid takes a
+small extension path through Shiki because the upstream two-face catalog does
+not include it. Its dependency closure includes HTML, CSS, JSON, and JavaScript
+grammars, so nested Shopify templates are highlighted structurally.
+
+No language uses hand-written keyword matching. Unknown identifiers produce
+plain text instead of aborting PDF generation.
+
 ## Resources
 
 Image paths are resolved relative to the Markdown file. With standard input,
@@ -58,9 +71,8 @@ fetched.
 
 The release binary uses jemalloc for Rust and supported native allocations.
 This reduces allocator fragmentation during Typst's allocation-heavy page
-layout. Rust code blocks use the embedded targeted syntax definition, avoiding
-initialization of the full syntax collection when it is unnecessary. The Typst
-engine is dropped as soon as compilation produces an owned paged document.
+layout. Syntax grammars and regexes initialize lazily. The Typst engine is
+dropped as soon as compilation produces an owned paged document.
 
 Typst still materializes the complete paged document before serialization.
 Peak memory therefore scales with page count and content complexity, especially

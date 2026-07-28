@@ -60,7 +60,7 @@ fn run(cli: Cli) -> Result<()> {
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
         },
-    );
+    )?;
     let pages = pdf::render(&typst, &output, &source_dir)?;
     if !cli.quiet {
         println!(

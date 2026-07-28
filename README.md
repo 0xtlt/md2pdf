@@ -28,7 +28,7 @@ md2pdf document.md --output build/document.pdf
 ## Features
 
 - embedded Typst PDF engine and DejaVu fonts;
-- dark or light syntax highlighting;
+- dark or light TextMate syntax highlighting with a broad language catalog;
 - automatic wrapping for long code lines;
 - page-safe splitting for large code blocks;
 - clickable PDF links and source-relative local images;
@@ -113,6 +113,17 @@ fenced code blocks are supported.
 The detailed [Markdown support matrix](docs/markdown-support.md) documents
 behavior and known limitations.
 
+### Syntax highlighting
+
+Fenced code blocks use full TextMate grammars rather than hand-written language
+patterns. Typst's Syntect/two-face catalog handles Rust, HTML, CSS, JavaScript,
+TypeScript, JSON, Python, Go, Java, C/C++, shells, SQL, YAML, TOML, and many
+other languages. Liquid uses a precompiled grammar with embedded HTML, CSS,
+JSON, and JavaScript support.
+
+See the [syntax-highlighting documentation](docs/syntax-highlighting.md) for
+examples, aliases, fallback behavior, and implementation details.
+
 ## Architecture
 
 The pipeline is intentionally straightforward:
@@ -121,25 +132,24 @@ The pipeline is intentionally straightforward:
 Markdown -> pulldown-cmark -> Typst source -> embedded Typst engine -> PDF
 ```
 
-Fonts and the syntax theme are compiled into the executable. See the
+Fonts, themes, and the Liquid grammar are compiled into the executable. See the
 [architecture documentation](docs/architecture.md) for design choices and
 layout invariants.
 
 ## Performance
 
-Version 3.1 reduces both memory use and conversion time without changing the
-default layout or removing syntax highlighting. On an Apple M4 Pro, compared
-with version 3.0.1:
+Version 3.2 uses complete production grammars and remains substantially faster
+and lighter than version 3.0.1. On an Apple M4 Pro:
 
 | Workload | Peak RAM | Median time | CPU cycles |
 | --- | ---: | ---: | ---: |
-| Small, 1 page | 42.4 → 32.3 MiB | 36.1 → 15.7 ms | 133.8 → 55.3 million |
-| Medium, 40 pages | 89.4 → 72.1 MiB | 183.6 → 100.3 ms | 744.0 → 408.4 million |
-| Large, 240 pages | 310.7 → 262.8 MiB | 942.2 → 529.7 ms | 3.87 → 2.22 billion |
+| Small, 1 page | 42.4 → 33.0 MiB | 36.1 → 15.2 ms | 133.8 → 62.5 million |
+| Medium, 40 pages | 89.4 → 76.9 MiB | 183.6 → 106.8 ms | 744.0 → 464.4 million |
+| Large, 240 pages | 310.7 → 282.4 MiB | 942.2 → 585.9 ms | 3.87 → 2.50 billion |
 
 Each median uses ten fresh-process executions after two warm-ups. Peak resident
-memory and CPU cycles are measured in a separate successful run with macOS
-`/usr/bin/time -lp`.
+memory and CPU cycles are medians from three separate successful runs with
+macOS `/usr/bin/time -lp`.
 
 ## Development
 
@@ -151,7 +161,8 @@ RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 ```
 
 Tests cover Markdown parsing, Typst escaping, code wrapping and pagination,
-relative images, standard input, CLI errors, and actual PDF generation.
+the full language catalog, embedded Liquid/HTML highlighting, relative images,
+standard input, CLI errors, and actual PDF generation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete workflow.
 

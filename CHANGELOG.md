@@ -5,6 +5,19 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-07-28
+
+### Changed
+
+- replaced the compact Rust-only override with Typst's complete Syntect and
+  two-face language catalog;
+- enabled the native Oniguruma regex backend for faster full-grammar
+  highlighting;
+- added precompiled Liquid TextMate highlighting with embedded HTML, CSS, JSON,
+  and JavaScript dependencies;
+- added multi-language unit, integration, and visual fixtures;
+- retained a safe plain-text fallback for unknown language identifiers.
+
 ## [3.1.0] - 2026-07-28
 
 ### Changed
@@ -41,7 +54,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.1.0...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.0...HEAD
+[3.2.0]: https://github.com/0xtlt/md2pdf/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/0xtlt/md2pdf/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/0xtlt/md2pdf/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/0xtlt/md2pdf/tree/v3.0.0
