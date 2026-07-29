@@ -17,6 +17,8 @@ All notable changes are documented in this file. The format follows
 
 - replaced the compact Rust-only override with Typst's complete Syntect and
   two-face language catalog;
+- retained jemalloc on supported platforms while using the system allocator on
+  Windows;
 - enabled the native Oniguruma regex backend for faster full-grammar
   highlighting;
 - added precompiled Liquid TextMate highlighting with embedded HTML, CSS, JSON,
