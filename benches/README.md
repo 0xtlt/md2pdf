@@ -31,12 +31,13 @@ Initial async implementation (Mermaid + Liquid deferred) vs sync `main`:
 
 On Mermaid-heavy input, async overlap helps a lot: wall clock drops by about two thirds because independent Mermaid jobs use multiple cores (~3× CPU%). Total CPU work and peak RAM rise only modestly. For documents with few diagrams, expect little or no wall-clock win (Typst layout still serial). Follow-up hardening keeps Liquid synchronous and merges Mermaid output via structured segments.
 
-Raw JSON: `results/sync.json`, `results/async.json`, `results/comparison.json`.
+Raw JSON under `results/` is gitignored (machine-specific). Write fresh files locally when you re-run the harness.
 
 Reproduce:
 
 ```bash
 cargo build --release
+mkdir -p benches/results
 python3 scripts/bench_render.py \
   --binary target/release/md2pdf \
   --source benches/fixtures/heavy-async.md \
