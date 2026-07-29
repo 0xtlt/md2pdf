@@ -26,18 +26,29 @@ jobs:
             archive: md2pdf-linux-x86_64
             binary: md2pdf
             package: md2pdf-linux-x86_64.tar.gz
+            smoke: true
           - name: Windows x86_64
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             archive: md2pdf-windows-x86_64
             binary: md2pdf.exe
             package: md2pdf-windows-x86_64.zip
+            smoke: true
           - name: macOS arm64
             runner: macos-15
             target: aarch64-apple-darwin
             archive: md2pdf-macos-arm64
             binary: md2pdf
             package: md2pdf-macos-arm64.tar.gz
+            smoke: true
+          - name: macOS x86_64
+            runner: macos-15
+            target: x86_64-apple-darwin
+            archive: md2pdf-macos-x86_64
+            binary: md2pdf
+            package: md2pdf-macos-x86_64.tar.gz
+            # Cross-compiled on Apple Silicon; skip native smoke-test.
+            smoke: false
 
     steps:
       - uses: actions/checkout@v7
@@ -53,7 +64,7 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Smoke-test release binary
-        if: runner.os != 'Windows'
+        if: runner.os != 'Windows' && matrix.smoke
         shell: bash
         run: |
           binary="target/${{ matrix.target }}/release/${{ matrix.binary }}"
@@ -62,7 +73,7 @@ jobs:
           test -s smoke-test.pdf
 
       - name: Smoke-test release binary on Windows
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.smoke
         shell: pwsh
         run: |
           $binary = "target/${{ matrix.target }}/release/${{ matrix.binary }}"
@@ -136,3 +147,21 @@ jobs:
               --generate-notes \
               --title "md2pdf ${GITHUB_REF_NAME#v}"
           fi
+
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Update 0xtlt/homebrew-tap formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          chmod +x scripts/update-homebrew-tap.sh
+          scripts/update-homebrew-tap.sh
