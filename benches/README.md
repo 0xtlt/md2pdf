@@ -9,6 +9,8 @@ Hardware PMU cycle counters were unavailable (`perf_event_open` → EACCES).
 
 ## Results (release binaries)
 
+Initial async implementation (Mermaid + Liquid deferred) vs sync `main`:
+
 | Metric | Sync (`main`) | Async (Tokio `spawn_blocking`) | Delta |
 | --- | ---: | ---: | ---: |
 | Wall time avg | 0.874 s | 0.309 s | **-64.7%** |
@@ -27,7 +29,7 @@ Hardware PMU cycle counters were unavailable (`perf_event_open` → EACCES).
 
 ### Verdict
 
-On Mermaid-heavy input, async overlap helps a lot: wall clock drops by about two thirds because independent Mermaid/Liquid jobs use multiple cores (~3× CPU%). Total CPU work and peak RAM rise only modestly. For documents with few diagrams, expect little or no wall-clock win (Typst layout still serial).
+On Mermaid-heavy input, async overlap helps a lot: wall clock drops by about two thirds because independent Mermaid jobs use multiple cores (~3× CPU%). Total CPU work and peak RAM rise only modestly. For documents with few diagrams, expect little or no wall-clock win (Typst layout still serial). Follow-up hardening keeps Liquid synchronous and merges Mermaid output via structured segments.
 
 Raw JSON: `results/sync.json`, `results/async.json`, `results/comparison.json`.
 
