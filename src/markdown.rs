@@ -97,8 +97,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 Event::End(TagEnd::CodeBlock) => {
                     let (language, source) = code.take().expect("code buffer exists");
                     if is_mermaid_language(&language) {
-                        let (typst, asset) =
-                            mermaid_block(&source, options.code_theme, assets.len())?;
+                        let (typst, asset) = mermaid_block(&source, options, assets.len())?;
                         assets.push(asset);
                         body.push_str(&typst);
                     } else {
@@ -517,27 +516,357 @@ fn is_mermaid_language(language: &str) -> bool {
 
 fn mermaid_block(
     source: &str,
-    theme: CodeTheme,
+    options: &TypstOptions,
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
-    let mut options = RenderOptions {
-        theme: match theme {
+    let mut render_options = RenderOptions {
+        theme: match options.code_theme {
             CodeTheme::Dark => Theme::dark(),
             CodeTheme::Light => Theme::mermaid_default(),
         },
         ..RenderOptions::default()
     };
     // Typst resolves a single SVG font family; use the embedded DejaVu face.
-    options.theme.font_family = "DejaVu Sans".to_owned();
-    let svg = render_with_options(source.trim(), options)
+    render_options.theme.font_family = "DejaVu Sans".to_owned();
+    // Slightly denser than Mermaid's screen defaults so diagrams match print text.
+    render_options.theme.font_size = 12.0;
+    let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
+    let svg = crop_mermaid_svg(&svg);
     let path = format!("md2pdf-mermaid-{index}.svg");
+    let width_mm = mermaid_display_width_mm(&svg, options);
     let typst = format!(
         "#block(width: 100%, above: 7pt, below: 18pt)\
-         [#align(center)[#image({}, width: 90%)]]\n\n",
+         [#align(center)[#image({}, width: {width_mm:.2}mm)]]\n\n",
         typst_string(&path)
     );
     Ok((typst, (path, svg.into_bytes())))
+}
+
+/// Remove excess Mermaid canvas padding so sizing uses the drawn content.
+fn crop_mermaid_svg(svg: &str) -> String {
+    let Some((min_x, min_y, max_x, max_y)) = mermaid_svg_content_bounds(svg) else {
+        return svg.to_owned();
+    };
+    if max_x <= min_x || max_y <= min_y {
+        return svg.to_owned();
+    }
+    let pad = 16.0;
+    let x = min_x - pad;
+    let y = min_y - pad;
+    let width = (max_x - min_x) + 2.0 * pad;
+    let height = (max_y - min_y) + 2.0 * pad;
+    let mut output = replace_svg_root_dimensions(svg, width, height, x, y, width, height);
+    output = replace_svg_background_rect(&output, x, y, width, height);
+    output
+}
+
+fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
+    let without_defs = strip_svg_defs(svg);
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut found = false;
+
+    for (index, _) in without_defs.match_indices("<rect") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        let Some(x) = svg_tag_number(tag, "x") else {
+            continue;
+        };
+        let Some(y) = svg_tag_number(tag, "y") else {
+            continue;
+        };
+        let Some(width) = svg_tag_number(tag, "width") else {
+            continue;
+        };
+        let Some(height) = svg_tag_number(tag, "height") else {
+            continue;
+        };
+        // Skip the full-canvas background rectangle.
+        let is_background_fill = tag.contains("fill=\"#FFFFFF\"")
+            || tag.contains("fill=\"#333333\"")
+            || tag.contains("fill=\"#ffffff\"");
+        if width > 200.0 && height > 200.0 && is_background_fill && !tag.contains("rx=") {
+            continue;
+        }
+        include_bounds(&mut min_x, &mut min_y, &mut max_x, &mut max_y, x, y);
+        include_bounds(
+            &mut min_x,
+            &mut min_y,
+            &mut max_x,
+            &mut max_y,
+            x + width,
+            y + height,
+        );
+        found = true;
+    }
+
+    for (index, _) in without_defs.match_indices("<line") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        let points = [
+            (svg_tag_number(tag, "x1"), svg_tag_number(tag, "y1")),
+            (svg_tag_number(tag, "x2"), svg_tag_number(tag, "y2")),
+        ];
+        for (x, y) in points {
+            if let (Some(x), Some(y)) = (x, y) {
+                include_bounds(&mut min_x, &mut min_y, &mut max_x, &mut max_y, x, y);
+                found = true;
+            }
+        }
+    }
+
+    for (index, _) in without_defs.match_indices("<text") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        if let (Some(x), Some(y)) = (svg_tag_number(tag, "x"), svg_tag_number(tag, "y")) {
+            let font_size = svg_tag_number(tag, "font-size").unwrap_or(12.0);
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                x - font_size * 4.0,
+                y - font_size,
+            );
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                x + font_size * 4.0,
+                y + font_size * 0.4,
+            );
+            found = true;
+        }
+    }
+
+    for (index, _) in without_defs.match_indices(" d=\"") {
+        let start = index + 4;
+        let Some(end) = without_defs[start..].find('"') else {
+            continue;
+        };
+        for number in path_coordinate_pairs(&without_defs[start..start + end]) {
+            include_bounds(
+                &mut min_x, &mut min_y, &mut max_x, &mut max_y, number.0, number.1,
+            );
+            found = true;
+        }
+    }
+
+    found.then_some((min_x, min_y, max_x, max_y))
+}
+
+fn include_bounds(
+    min_x: &mut f32,
+    min_y: &mut f32,
+    max_x: &mut f32,
+    max_y: &mut f32,
+    x: f32,
+    y: f32,
+) {
+    if !x.is_finite() || !y.is_finite() {
+        return;
+    }
+    *min_x = min_x.min(x);
+    *min_y = min_y.min(y);
+    *max_x = max_x.max(x);
+    *max_y = max_y.max(y);
+}
+
+fn strip_svg_defs(svg: &str) -> String {
+    let Some(start) = svg.find("<defs") else {
+        return svg.to_owned();
+    };
+    let Some(end_rel) = svg[start..].find("</defs>") else {
+        return svg.to_owned();
+    };
+    let end = start + end_rel + "</defs>".len();
+    format!("{}{}", &svg[..start], &svg[end..])
+}
+
+fn svg_tag_number(tag: &str, name: &str) -> Option<f32> {
+    let key = format!("{name}=\"");
+    let start = tag.find(&key)? + key.len();
+    let end = start + tag[start..].find('"')?;
+    tag[start..end].parse().ok()
+}
+
+fn path_coordinate_pairs(path: &str) -> Vec<(f32, f32)> {
+    let mut numbers = Vec::new();
+    let mut current = String::new();
+    for character in path.chars() {
+        if character.is_ascii_digit() || character == '.' || character == '-' {
+            current.push(character);
+            continue;
+        }
+        if !current.is_empty() {
+            if let Ok(value) = current.parse::<f32>() {
+                numbers.push(value);
+            }
+            current.clear();
+        }
+    }
+    if !current.is_empty()
+        && let Ok(value) = current.parse::<f32>()
+    {
+        numbers.push(value);
+    }
+    numbers
+        .chunks_exact(2)
+        .map(|chunk| (chunk[0], chunk[1]))
+        .collect()
+}
+
+fn replace_svg_root_dimensions(
+    svg: &str,
+    width: f32,
+    height: f32,
+    view_x: f32,
+    view_y: f32,
+    view_w: f32,
+    view_h: f32,
+) -> String {
+    let Some(tag_end) = svg.find('>') else {
+        return svg.to_owned();
+    };
+    let mut open = svg[..tag_end].to_owned();
+    open = replace_attr(&open, "width", &format!("{width:.3}"));
+    open = replace_attr(&open, "height", &format!("{height:.3}"));
+    open = replace_attr(
+        &open,
+        "viewBox",
+        &format!("{view_x:.3} {view_y:.3} {view_w:.3} {view_h:.3}"),
+    );
+    format!("{open}{}", &svg[tag_end..])
+}
+
+fn replace_svg_background_rect(svg: &str, x: f32, y: f32, width: f32, height: f32) -> String {
+    let Some(start) = svg.find("<rect") else {
+        return svg.to_owned();
+    };
+    let Some(end_rel) = svg[start..].find("/>") else {
+        return svg.to_owned();
+    };
+    let end = start + end_rel + 2;
+    let tag = &svg[start..end];
+    if !(tag.contains("fill=\"#FFFFFF\"")
+        || tag.contains("fill=\"#333333\"")
+        || tag.contains("fill=\"#ffffff\""))
+        || tag.contains("rx=")
+    {
+        return svg.to_owned();
+    }
+    let replacement = format!(
+        "<rect x=\"{x:.3}\" y=\"{y:.3}\" width=\"{width:.3}\" height=\"{height:.3}\" fill=\"{}\"/>",
+        if tag.contains("#333") {
+            "#333333"
+        } else {
+            "#FFFFFF"
+        }
+    );
+    format!("{}{}{}", &svg[..start], replacement, &svg[end..])
+}
+
+fn replace_attr(tag: &str, name: &str, value: &str) -> String {
+    let key = format!("{name}=\"");
+    if let Some(start) = tag.find(&key) {
+        let value_start = start + key.len();
+        if let Some(end_rel) = tag[value_start..].find('"') {
+            let end = value_start + end_rel;
+            return format!("{}{}{}", &tag[..value_start], value, &tag[end..]);
+        }
+    }
+    format!("{tag} {name}=\"{value}\"")
+}
+
+/// Fit a Mermaid SVG into the printable page area without stretching.
+///
+/// Mermaid emits CSS-pixel dimensions. Those are converted to print points
+/// (96 CSS px → 72 pt), then scaled toward a comfortable page width while
+/// staying inside the content box.
+fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
+    // Mermaid SVG width/height are CSS pixels, not Typst points.
+    const CSS_PX_TO_PT: f32 = 72.0 / 96.0;
+    let (raw_width, raw_height) = svg_dimensions_pt(svg).unwrap_or((400.0, 300.0));
+    let natural_width_pt = raw_width * CSS_PX_TO_PT;
+    let natural_height_pt = raw_height * CSS_PX_TO_PT;
+    let (max_width_pt, max_height_pt) = mermaid_content_box_pt(options);
+    let preferred_width_pt = max_width_pt * 0.75;
+    let scale = (preferred_width_pt / natural_width_pt)
+        .min(max_width_pt / natural_width_pt)
+        .min(max_height_pt / natural_height_pt)
+        .clamp(0.45, 1.25);
+    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(55.0, 250.0)
+}
+
+fn mermaid_content_box_pt(options: &TypstOptions) -> (f32, f32) {
+    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
+    let page_width_mm = if options.landscape {
+        portrait_height_mm
+    } else {
+        portrait_width_mm
+    };
+    let page_height_mm = if options.landscape {
+        portrait_width_mm
+    } else {
+        portrait_height_mm
+    };
+    let header_mm = if options.show_header { 8.0 } else { 0.0 };
+    let content_width_pt = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM;
+    let content_height_pt = (page_height_mm - 2.0 * options.margin_mm - header_mm) * POINTS_PER_MM;
+    (
+        content_width_pt * 0.96,
+        // One diagram should be able to occupy most of a page body.
+        content_height_pt * 0.62,
+    )
+}
+
+fn svg_dimensions_pt(svg: &str) -> Option<(f32, f32)> {
+    let width = svg_length_attr(svg, "width");
+    let height = svg_length_attr(svg, "height");
+    if let (Some(width), Some(height)) = (width, height)
+        && width > 0.0
+        && height > 0.0
+    {
+        return Some((width, height));
+    }
+    let view_box = svg_attr(svg, "viewBox")?;
+    let parts = view_box
+        .split(|character: char| character.is_whitespace() || character == ',')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return None;
+    }
+    let width = parts[2].parse::<f32>().ok()?;
+    let height = parts[3].parse::<f32>().ok()?;
+    (width > 0.0 && height > 0.0).then_some((width, height))
+}
+
+fn svg_length_attr(svg: &str, name: &str) -> Option<f32> {
+    let value = svg_attr(svg, name)?;
+    let numeric = value
+        .trim()
+        .trim_end_matches("px")
+        .trim_end_matches("pt")
+        .trim();
+    numeric.parse::<f32>().ok().filter(|value| *value > 0.0)
+}
+
+fn svg_attr<'a>(svg: &'a str, name: &str) -> Option<&'a str> {
+    let key = format!("{name}=\"");
+    let start = svg.find(&key)? + key.len();
+    let end = start + svg[start..].find('"')?;
+    Some(&svg[start..end])
 }
 
 fn normalize_fence_language(language: &str) -> String {
@@ -813,9 +1142,50 @@ mod tests {
         assert!(
             document
                 .source
-                .contains("#image(\"md2pdf-mermaid-0.svg\", width: 90%)")
+                .contains("#image(\"md2pdf-mermaid-0.svg\", width:")
         );
+        assert!(document.source.contains("mm)"));
         assert!(!document.source.contains("lang: \"mermaid\""));
+    }
+
+    #[test]
+    fn crops_excess_mermaid_canvas_padding() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"450\" height=\"265\" \
+             viewBox=\"-50 -10 450 265\">\
+             <rect x=\"-50\" y=\"-10\" width=\"450\" height=\"265\" fill=\"#FFFFFF\"/>\
+             <rect x=\"0.00\" y=\"0.00\" width=\"150.00\" height=\"65.00\" rx=\"3\" ry=\"3\" \
+             fill=\"#EAEAEA\" stroke=\"#666666\"/>\
+             <rect x=\"200.00\" y=\"179.00\" width=\"150.00\" height=\"65.00\" rx=\"3\" ry=\"3\" \
+             fill=\"#EAEAEA\" stroke=\"#666666\"/></svg>";
+        let cropped = crop_mermaid_svg(svg);
+        let (width, height) = svg_dimensions_pt(&cropped).expect("dimensions");
+        assert!(
+            width < 400.0 && height < 280.0,
+            "expected tighter crop, got {width}x{height}: {cropped}"
+        );
+        assert!(cropped.contains("viewBox=\""));
+    }
+
+    #[test]
+    fn sizes_tall_mermaid_diagrams_to_the_page_box() {
+        let svg = r#"<svg width="431" height="531" viewBox="0 0 431 531"></svg>"#;
+        let width_mm = mermaid_display_width_mm(svg, &options());
+        // CSS-px → pt, then height-capped while still using a healthy page share.
+        assert!(
+            (110.0..140.0).contains(&width_mm),
+            "unexpected width_mm={width_mm}"
+        );
+    }
+
+    #[test]
+    fn sizes_wide_mermaid_diagrams_near_content_width() {
+        let svg = r#"<svg width="450" height="265" viewBox="0 0 450 265"></svg>"#;
+        let width_mm = mermaid_display_width_mm(svg, &options());
+        // Prefer about 3/4 of the content box, with modest upscale only.
+        assert!(
+            (110.0..135.0).contains(&width_mm),
+            "unexpected width_mm={width_mm}"
+        );
     }
 
     #[test]
