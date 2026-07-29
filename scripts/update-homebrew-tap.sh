@@ -81,12 +81,12 @@ class Md2pdf < Formula
       This is the Rust md2pdf from ${SOURCE_REPO}.
 
       Homebrew core ships a different Go-based md2pdf (solworktech/md2pdf).
-      Always install this formula with the fully-qualified name:
+      Prefer:
 
         brew install 0xtlt/tap/md2pdf
 
       If \`md2pdf --help\` mentions md2pdf.go or only -i/-o flags, uninstall the
-      core package first, then reinstall from this tap.
+      core package first, then reinstall this formula.
     EOS
   end
 
@@ -95,6 +95,13 @@ class Md2pdf < Formula
   end
 end
 EOF
+
+# Keep the in-repo formula in sync when the script runs from a git checkout.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -d "${repo_root}/packaging/homebrew" ]]; then
+  cp "${formula_path}" "${repo_root}/packaging/homebrew/md2pdf.rb"
+  echo "Updated ${repo_root}/packaging/homebrew/md2pdf.rb"
+fi
 
 tap_dir="${workdir}/homebrew-tap"
 # Authenticate HTTPS git pushes with GH_TOKEN (PAT for the tap repo).

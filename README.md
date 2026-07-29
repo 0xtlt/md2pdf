@@ -13,17 +13,22 @@ LaTeX required.
 
 ### Homebrew
 
-Homebrew core ships a **different** Go-based `md2pdf`. Install this one with:
+Homebrew core ships a **different** Go-based `md2pdf`. Install this Rust build:
+
+```console
+brew install --formula https://raw.githubusercontent.com/0xtlt/md2pdf/main/packaging/homebrew/md2pdf.rb
+```
+
+Or from the tap (once the formula is published there):
 
 ```console
 brew install 0xtlt/tap/md2pdf
 ```
 
-If `md2pdf --help` mentions `md2pdf.go`, you have the wrong package:
+If `md2pdf --help` mentions `md2pdf.go`, uninstall the core package first:
 
 ```console
 brew uninstall md2pdf
-brew install 0xtlt/tap/md2pdf
 ```
 
 ### Binary

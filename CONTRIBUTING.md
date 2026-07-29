@@ -58,6 +58,20 @@ classic PAT or fine-grained token with **Contents: Read and write** on
 `0xtlt/homebrew-tap`. Without that secret the release still publishes; the tap
 step is skipped with a warning.
 
-Install from the tap with the fully-qualified name
-`brew install 0xtlt/tap/md2pdf`. Plain `brew install md2pdf` resolves to
-Homebrew core's unrelated Go package.
+Install with either:
+
+```console
+brew install --formula https://raw.githubusercontent.com/0xtlt/md2pdf/main/packaging/homebrew/md2pdf.rb
+brew install 0xtlt/tap/md2pdf
+```
+
+Plain `brew install md2pdf` resolves to Homebrew core's unrelated Go package.
+
+If a release publishes binaries but the tap still has no formula, re-run:
+
+```console
+gh workflow run update-homebrew-tap.yml --ref main -f version=<version>
+```
+
+That job needs `HOMEBREW_TAP_TOKEN` with **Contents: Read and write** on
+`0xtlt/homebrew-tap`.
