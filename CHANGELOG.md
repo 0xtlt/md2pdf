@@ -5,6 +5,8 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-07-29
+
 ### Changed
 
 - render Mermaid fences asynchronously with Tokio `spawn_blocking` on a shared,
@@ -22,7 +24,10 @@ All notable changes are documented in this file. The format follows
 - sized Mermaid diagrams to the printable page area, cropping excess canvas
   padding and converting CSS-pixel dimensions to print-friendly widths;
 - sized large Mermaid diagrams more generously so complex charts stay readable
-  while simple ones remain compact.
+  while simple ones remain compact;
+- publish macOS Intel (`x86_64`) release archives alongside Apple Silicon;
+- update [`0xtlt/homebrew-tap`](https://github.com/0xtlt/homebrew-tap) on each
+  tagged release so `brew install md2pdf` stays current.
 
 ### Fixed
 
