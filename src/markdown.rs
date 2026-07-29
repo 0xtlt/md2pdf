@@ -790,22 +790,20 @@ fn replace_attr(tag: &str, name: &str, value: &str) -> String {
 
 /// Fit a Mermaid SVG into the printable page area without stretching.
 ///
-/// Mermaid emits CSS-pixel dimensions. Those are converted to print points
-/// (96 CSS px → 72 pt), then scaled toward a comfortable page width while
-/// staying inside the content box.
+/// Mermaid emits CSS-pixel dimensions. Those are converted to a compact print
+/// size, then scaled down further only when they would overflow the content box.
 fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
-    // Mermaid SVG width/height are CSS pixels, not Typst points.
-    const CSS_PX_TO_PT: f32 = 72.0 / 96.0;
+    // Treat Mermaid CSS pixels as a denser print size than 96dpi screen pixels
+    // so diagrams sit closer to body-text scale.
+    const CSS_PX_TO_PT: f32 = 0.55;
     let (raw_width, raw_height) = svg_dimensions_pt(svg).unwrap_or((400.0, 300.0));
     let natural_width_pt = raw_width * CSS_PX_TO_PT;
     let natural_height_pt = raw_height * CSS_PX_TO_PT;
     let (max_width_pt, max_height_pt) = mermaid_content_box_pt(options);
-    let preferred_width_pt = max_width_pt * 0.75;
-    let scale = (preferred_width_pt / natural_width_pt)
-        .min(max_width_pt / natural_width_pt)
+    let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
-        .clamp(0.45, 1.25);
-    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(55.0, 250.0)
+        .clamp(0.35, 1.0);
+    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(40.0, 120.0)
 }
 
 fn mermaid_content_box_pt(options: &TypstOptions) -> (f32, f32) {
@@ -823,11 +821,7 @@ fn mermaid_content_box_pt(options: &TypstOptions) -> (f32, f32) {
     let header_mm = if options.show_header { 8.0 } else { 0.0 };
     let content_width_pt = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM;
     let content_height_pt = (page_height_mm - 2.0 * options.margin_mm - header_mm) * POINTS_PER_MM;
-    (
-        content_width_pt * 0.96,
-        // One diagram should be able to occupy most of a page body.
-        content_height_pt * 0.62,
-    )
+    (content_width_pt * 0.70, content_height_pt * 0.42)
 }
 
 fn svg_dimensions_pt(svg: &str) -> Option<(f32, f32)> {
@@ -1170,9 +1164,8 @@ mod tests {
     fn sizes_tall_mermaid_diagrams_to_the_page_box() {
         let svg = r#"<svg width="431" height="531" viewBox="0 0 431 531"></svg>"#;
         let width_mm = mermaid_display_width_mm(svg, &options());
-        // CSS-px → pt, then height-capped while still using a healthy page share.
         assert!(
-            (110.0..140.0).contains(&width_mm),
+            (70.0..95.0).contains(&width_mm),
             "unexpected width_mm={width_mm}"
         );
     }
@@ -1181,9 +1174,8 @@ mod tests {
     fn sizes_wide_mermaid_diagrams_near_content_width() {
         let svg = r#"<svg width="450" height="265" viewBox="0 0 450 265"></svg>"#;
         let width_mm = mermaid_display_width_mm(svg, &options());
-        // Prefer about 3/4 of the content box, with modest upscale only.
         assert!(
-            (110.0..135.0).contains(&width_mm),
+            (70.0..95.0).contains(&width_mm),
             "unexpected width_mm={width_mm}"
         );
     }
