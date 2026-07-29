@@ -193,3 +193,25 @@ fn rejects_invalid_mermaid_without_creating_a_pdf() {
     assert!(!output.exists());
     assert!(String::from_utf8_lossy(&result.stderr).contains("Mermaid"));
 }
+
+#[test]
+fn converts_readme_with_remote_badge_images() {
+    let directory = tempdir().expect("temporary directory");
+    let output = directory.path().join("readme.pdf");
+    let readme = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+
+    let result = binary()
+        .arg(&readme)
+        .arg("--output")
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
+}

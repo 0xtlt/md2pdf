@@ -7,6 +7,8 @@ All notable changes are documented in this file. The format follows
 
 ### Fixed
 
+- omit remote `http(s)` images instead of failing PDF generation when Typst
+  cannot fetch them (README badges and similar), keeping alt text for links;
 - document that Homebrew core's Go `md2pdf` collides with this formula, and
   require `brew install 0xtlt/tap/md2pdf`;
 - harden the Homebrew tap updater so formula pushes authenticate reliably and

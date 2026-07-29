@@ -90,6 +90,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
     let mut code: Option<(String, String)> = None;
     let mut image_depth = 0usize;
+    let mut remote_image_depth = 0usize;
     let mut standalone_image = false;
     let mut list_stack: Vec<Option<u64>> = Vec::new();
     let mut in_table_head = false;
@@ -243,31 +244,41 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 body.push_str("],\n");
             }
             Event::Start(Tag::Image { dest_url, .. }) => {
-                image_depth += 1;
-                standalone_image = paragraph
-                    .as_ref()
-                    .is_some_and(|buffer| buffer.typst.is_empty());
-                if standalone_image {
-                    paragraph.take();
-                    body.push_str(&format!(
-                        "#block(width: 100%, above: 7pt, below: 18pt)\
-                         [#align(center)[#image({}, width: 90%)]]\n\n",
-                        typst_string(&dest_url)
-                    ));
+                // Typst has no network access. Skip remote images and keep any
+                // alt text so linked badges still render as clickable labels.
+                if is_remote_image_url(&dest_url) {
+                    remote_image_depth += 1;
                 } else {
-                    push_inline(
-                        &mut paragraph,
-                        &mut heading,
-                        &format!("#image({}, height: 1em)", typst_string(&dest_url)),
-                        "",
-                    );
+                    image_depth += 1;
+                    standalone_image = paragraph
+                        .as_ref()
+                        .is_some_and(|buffer| buffer.typst.is_empty());
+                    if standalone_image {
+                        paragraph.take();
+                        body.push_str(&format!(
+                            "#block(width: 100%, above: 7pt, below: 18pt)\
+                             [#align(center)[#image({}, width: 90%)]]\n\n",
+                            typst_string(&dest_url)
+                        ));
+                    } else {
+                        push_inline(
+                            &mut paragraph,
+                            &mut heading,
+                            &format!("#image({}, height: 1em)", typst_string(&dest_url)),
+                            "",
+                        );
+                    }
                 }
             }
             Event::End(TagEnd::Image) => {
-                image_depth = image_depth.saturating_sub(1);
-                if standalone_image {
-                    paragraph = Some(InlineBuffer::default());
-                    standalone_image = false;
+                if remote_image_depth > 0 {
+                    remote_image_depth -= 1;
+                } else {
+                    image_depth = image_depth.saturating_sub(1);
+                    if standalone_image {
+                        paragraph = Some(InlineBuffer::default());
+                        standalone_image = false;
+                    }
                 }
             }
             Event::Start(Tag::Strong) => push_inline(&mut paragraph, &mut heading, "*", ""),
@@ -1279,6 +1290,12 @@ fn char_boundary_at(value: &str, character_index: usize) -> usize {
         .map_or(value.len(), |(index, _)| index)
 }
 
+fn is_remote_image_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("//")
+}
+
 fn push_inline(
     paragraph: &mut Option<InlineBuffer>,
     heading: &mut Option<(HeadingLevel, InlineBuffer)>,
@@ -1427,6 +1444,43 @@ mod tests {
                 .contains("#image(\"diagram.svg\", width: 90%)")
         );
         assert!(document.source.contains("above: 7pt, below: 18pt"));
+    }
+
+    #[test]
+    fn omits_remote_images_and_keeps_alt_text() {
+        let document = to_typst(
+            "# Badges\n\n\
+             [![CI](https://github.com/0xtlt/md2pdf/actions/workflows/ci.yml/badge.svg)]\
+             (https://github.com/0xtlt/md2pdf/actions/workflows/ci.yml)\n\n\
+             ![Remote](http://example.com/diagram.png)\n\n\
+             Protocol-relative ![Badge](//img.shields.io/badge/Rust-orange.svg)\n",
+            &options(),
+        )
+        .expect("valid bundled highlighter");
+        assert!(!document.source.contains("#image(\"https://"));
+        assert!(!document.source.contains("#image(\"http://"));
+        assert!(!document.source.contains("#image(\"//"));
+        assert!(document.source.contains(
+            "#link(\"https://github.com/0xtlt/md2pdf/actions/workflows/ci.yml\")[#text(\"CI\")]"
+        ));
+        assert!(document.source.contains("#text(\"Remote\")"));
+        assert!(document.source.contains("#text(\"Badge\")"));
+        assert!(document.assets.is_empty());
+    }
+
+    #[test]
+    fn keeps_local_images_after_remote_ones() {
+        let document = to_typst(
+            "# Mixed\n\n![Remote](https://example.com/a.png)\n\n![Local](local.png)\n",
+            &options(),
+        )
+        .expect("valid bundled highlighter");
+        assert!(!document.source.contains("#image(\"https://"));
+        assert!(
+            document
+                .source
+                .contains("#image(\"local.png\", width: 90%)")
+        );
     }
 
     #[test]

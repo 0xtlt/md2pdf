@@ -69,7 +69,7 @@ Run `md2pdf --help` for the full list.
 - Typst PDF engine with embedded fonts
 - TextMate syntax highlighting (dark / light)
 - Mermaid diagrams from `mermaid` / `mmd` fences
-- Clickable links and local images
+- Clickable links and local images (remote images omitted)
 - A4 / Letter, portrait or landscape
 - Custom title, author, header, footer, margins, and accent
 

@@ -8,7 +8,7 @@
 | Strikethrough | Yes | CommonMark extension enabled |
 | Links | Yes | Clickable PDF annotations |
 | Local images | Yes | Paths relative to the source |
-| Remote images | No | No network downloads |
+| Remote images | No | Omitted; alt text is kept |
 | Ordered lists | Yes | Nested lists supported |
 | Unordered lists | Yes | Nested lists supported |
 | Task lists | Yes | Rendered with Unicode symbols |
@@ -50,7 +50,8 @@ embedded renderer.
 
 Supported formats follow Typst's image engine and include PNG, JPEG, and SVG. An
 image alone in a paragraph becomes a centered block. An image embedded in text
-is sized to the line height.
+is sized to the line height. Remote `http(s)` images are not downloaded; their
+alt text is kept so linked badges still produce clickable labels.
 
 ## Result callout
 
