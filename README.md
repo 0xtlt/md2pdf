@@ -41,6 +41,19 @@ Line numbers are **disabled by default**. They only appear when
 
 ## Installation
 
+### Prebuilt binaries
+
+Download the archive for your platform from the
+[latest GitHub release](https://github.com/0xtlt/md2pdf/releases/latest):
+
+| Platform | Archive |
+| --- | --- |
+| Linux x86_64 | [`md2pdf-linux-x86_64.tar.gz`](https://github.com/0xtlt/md2pdf/releases/latest/download/md2pdf-linux-x86_64.tar.gz) |
+| Windows x86_64 | [`md2pdf-windows-x86_64.zip`](https://github.com/0xtlt/md2pdf/releases/latest/download/md2pdf-windows-x86_64.zip) |
+| macOS Apple Silicon | [`md2pdf-macos-arm64.tar.gz`](https://github.com/0xtlt/md2pdf/releases/latest/download/md2pdf-macos-arm64.tar.gz) |
+
+Each release also includes `SHA256SUMS` for archive verification.
+
 ### From source
 
 Rust stable is required:

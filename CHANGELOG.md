@@ -7,6 +7,12 @@ All notable changes are documented in this file. The format follows
 
 ## [3.2.0] - 2026-07-28
 
+### Added
+
+- added automated release builds for Linux x86_64, Windows x86_64, and macOS
+  arm64;
+- added SHA-256 checksums for all prebuilt release archives.
+
 ### Changed
 
 - replaced the compact Rust-only override with Typst's complete Syntect and
