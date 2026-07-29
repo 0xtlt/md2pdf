@@ -8,7 +8,7 @@
 | Strikethrough | Yes | CommonMark extension enabled |
 | Links | Yes | Clickable PDF annotations |
 | Local images | Yes | Paths relative to the source; missing files warn and keep alt text |
-| Remote images | Yes | Downloaded by default; disable with `--no-external` |
+| Remote images | Yes | HTTPS downloaded by default; `--no-external` denies; `--allow-http` permits cleartext HTTP |
 | Ordered lists | Yes | Nested lists supported |
 | Unordered lists | Yes | Nested lists supported |
 | Task lists | Yes | Rendered with Unicode symbols |
@@ -52,8 +52,9 @@ Supported formats follow Typst's image engine and include PNG, JPEG, GIF, and
 SVG. An image alone in a paragraph becomes a centered block. An image embedded
 in text is sized to the line height.
 
-Remote `http(s)` images are downloaded and embedded by default (Typst itself has
-no network access). Pass `--no-external` to skip them. Failed downloads and
+Remote HTTPS images are downloaded and embedded by default (Typst itself has no
+network access). Cleartext `http://` URLs are blocked unless `--allow-http` is
+set. Pass `--no-external` to skip all remote downloads. Failed downloads and
 missing local files emit a warning, keep any alt text, and continue PDF
 generation so linked badges still produce clickable labels.
 

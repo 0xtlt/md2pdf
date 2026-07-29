@@ -45,6 +45,8 @@ pub struct TypstOptions {
     pub source_dir: PathBuf,
     /// Whether remote `http(s)` images may be downloaded and embedded.
     pub allow_external: bool,
+    /// Whether cleartext `http://` image URLs may be downloaded.
+    pub allow_http: bool,
 }
 
 /// Converted Typst document plus virtual binary assets such as Mermaid SVGs.
@@ -1327,7 +1329,7 @@ fn resolve_image(
             warnings.push(format!("skipped remote image `{dest_url}` (--no-external)"));
             return None;
         }
-        match download_image(dest_url) {
+        match download_image(dest_url, options.allow_http) {
             Ok((extension, bytes)) => {
                 let name = format!("md2pdf-remote-{remote_image_index}.{extension}");
                 *remote_image_index += 1;
@@ -1431,6 +1433,7 @@ mod tests {
             page_break_prefixes: vec![],
             source_dir: PathBuf::from("."),
             allow_external: false,
+            allow_http: false,
         }
     }
 
@@ -1568,6 +1571,21 @@ mod tests {
         assert!(!document.source.contains("#image(\"https://"));
         assert!(document.source.contains("#image(\"test.svg\", width: 90%)"));
         assert_eq!(document.warnings.len(), 1);
+    }
+
+    #[test]
+    fn blocks_cleartext_http_images_unless_allow_http_is_set() {
+        let mut options = options();
+        options.allow_external = true;
+        let document = to_typst(
+            "# Insecure\n\n![Remote](http://example.com/diagram.png)\n",
+            &options,
+        )
+        .expect("valid bundled highlighter");
+        assert!(!document.source.contains("#image(\"md2pdf-remote-"));
+        assert!(document.source.contains("#text(\"Remote\")"));
+        assert_eq!(document.warnings.len(), 1);
+        assert!(document.warnings[0].contains("--allow-http"));
     }
 
     #[test]

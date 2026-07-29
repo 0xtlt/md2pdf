@@ -39,6 +39,14 @@ pub fn is_remote_image_url(url: &str) -> bool {
     normalize_remote_url(url).is_some()
 }
 
+/// Returns true when the URL uses cleartext `http://` (after normalization).
+#[must_use]
+pub fn is_insecure_http_url(url: &str) -> bool {
+    normalize_remote_url(url)
+        .map(|normalized| normalized.to_ascii_lowercase().starts_with("http://"))
+        .unwrap_or(false)
+}
+
 /// Normalize a remote image URL, rewriting `//host/path` to `https://host/path`.
 #[must_use]
 pub fn normalize_remote_url(url: &str) -> Option<String> {
@@ -57,6 +65,18 @@ pub fn normalize_remote_url(url: &str) -> Option<String> {
     }
 }
 
+/// Prepare a remote URL for download, rejecting cleartext HTTP unless allowed.
+pub fn prepare_download_url(url: &str, allow_http: bool) -> Result<String, String> {
+    let normalized =
+        normalize_remote_url(url).ok_or_else(|| "not a remote http(s) URL".to_owned())?;
+    if !allow_http && normalized.to_ascii_lowercase().starts_with("http://") {
+        return Err(
+            "insecure http:// images are blocked; use https:// or pass --allow-http".to_owned(),
+        );
+    }
+    Ok(normalized)
+}
+
 /// Infer an image kind from magic bytes, optional Content-Type, and URL path.
 #[must_use]
 pub fn detect_image_kind(bytes: &[u8], content_type: Option<&str>, url: &str) -> Option<ImageKind> {
@@ -70,8 +90,11 @@ pub fn detect_image_kind(bytes: &[u8], content_type: Option<&str>, url: &str) ->
 }
 
 /// Download a remote image and return `(extension, bytes)` or a short error message.
-pub fn download_image(url: &str) -> Result<(String, Vec<u8>), String> {
-    let url = normalize_remote_url(url).ok_or_else(|| "not a remote http(s) URL".to_owned())?;
+///
+/// Cleartext `http://` URLs are rejected unless `allow_http` is true. Redirects to
+/// `http://` are also rejected when `allow_http` is false.
+pub fn download_image(url: &str, allow_http: bool) -> Result<(String, Vec<u8>), String> {
+    let url = prepare_download_url(url, allow_http)?;
     let agent = ureq::AgentBuilder::new()
         .timeout_connect(TIMEOUT)
         .timeout_read(TIMEOUT)
@@ -82,6 +105,12 @@ pub fn download_image(url: &str) -> Result<(String, Vec<u8>), String> {
         .set("User-Agent", "md2pdf")
         .call()
         .map_err(|error| format!("download failed: {error}"))?;
+    let final_url = response.get_url().to_owned();
+    if !allow_http && final_url.to_ascii_lowercase().starts_with("http://") {
+        return Err(
+            "insecure http:// redirect is blocked; use https:// or pass --allow-http".to_owned(),
+        );
+    }
     let status = response.status();
     if !(200..300).contains(&status) {
         return Err(format!("download failed: HTTP {status}"));
@@ -101,7 +130,7 @@ pub fn download_image(url: &str) -> Result<(String, Vec<u8>), String> {
     if bytes.is_empty() {
         return Err("download failed: empty response".to_owned());
     }
-    let kind = detect_image_kind(&bytes, content_type.as_deref(), &url).ok_or_else(|| {
+    let kind = detect_image_kind(&bytes, content_type.as_deref(), &final_url).ok_or_else(|| {
         "download failed: response is not a supported image (png, jpeg, gif, svg)".to_owned()
     })?;
     Ok((kind.extension().to_owned(), bytes))
@@ -179,6 +208,26 @@ mod tests {
         );
         assert!(normalize_remote_url("docs/a.png").is_none());
         assert!(is_remote_image_url("HTTPS://example.com/a.PNG"));
+        assert!(is_insecure_http_url("http://example.com/a.png"));
+        assert!(!is_insecure_http_url("https://example.com/a.png"));
+        assert!(!is_insecure_http_url("//example.com/a.png"));
+    }
+
+    #[test]
+    fn rejects_cleartext_http_unless_allowed() {
+        assert!(
+            prepare_download_url("http://example.com/a.png", false)
+                .unwrap_err()
+                .contains("--allow-http")
+        );
+        assert_eq!(
+            prepare_download_url("http://example.com/a.png", true).as_deref(),
+            Ok("http://example.com/a.png")
+        );
+        assert_eq!(
+            prepare_download_url("https://example.com/a.png", false).as_deref(),
+            Ok("https://example.com/a.png")
+        );
     }
 
     #[test]

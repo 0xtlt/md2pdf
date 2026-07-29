@@ -91,6 +91,10 @@ pub struct Cli {
     #[arg(long = "no-external", action = ArgAction::SetTrue)]
     pub no_external: bool,
 
+    /// Allow cleartext http:// image downloads (https:// only by default)
+    #[arg(long = "allow-http", action = ArgAction::SetTrue)]
+    pub allow_http: bool,
+
     /// Suppress success output and non-fatal warnings
     #[arg(short, long)]
     pub quiet: bool,
@@ -110,8 +114,12 @@ mod tests {
     fn external_data_is_allowed_by_default() {
         let cli = Cli::try_parse_from(["md2pdf", "document.md"]).expect("valid arguments");
         assert!(!cli.no_external);
+        assert!(!cli.allow_http);
         let denied = Cli::try_parse_from(["md2pdf", "document.md", "--no-external"])
             .expect("valid arguments");
         assert!(denied.no_external);
+        let insecure = Cli::try_parse_from(["md2pdf", "document.md", "--allow-http"])
+            .expect("valid arguments");
+        assert!(insecure.allow_http);
     }
 }

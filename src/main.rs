@@ -62,6 +62,7 @@ fn run(cli: Cli) -> Result<()> {
             page_break_prefixes: cli.page_break_before.clone(),
             source_dir: source_dir.clone(),
             allow_external: !cli.no_external,
+            allow_http: cli.allow_http,
         },
     )?;
     if !cli.quiet {

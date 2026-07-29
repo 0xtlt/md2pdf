@@ -248,3 +248,32 @@ fn converts_readme_without_external_downloads() {
     assert!(!stderr.contains("SourceDiagnostic"));
     assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
 }
+
+#[test]
+fn warns_and_skips_cleartext_http_images_by_default() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("http-image.md");
+    let output = directory.path().join("http-image.pdf");
+    fs::write(
+        &source,
+        "# Insecure\n\n![Remote](http://example.com/diagram.png)\n\nText.\n",
+    )
+    .expect("write markdown");
+
+    let result = binary()
+        .arg(&source)
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("md2pdf: warning:"));
+    assert!(stderr.contains("--allow-http"));
+    assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
+}

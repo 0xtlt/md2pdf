@@ -9,6 +9,8 @@ All notable changes are documented in this file. The format follows
 
 - download remote Markdown images by default and embed them as virtual Typst
   assets; pass `--no-external` to deny external HTTP(S) data;
+- require HTTPS for remote image downloads by default; pass `--allow-http` to
+  permit cleartext `http://` URLs (redirects to HTTP are also blocked);
 - emit `md2pdf: warning:` lines for skipped remote or missing local images
   (suppressed by `--quiet`), keeping alt text so linked badges still work.
 
