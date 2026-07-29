@@ -76,11 +76,15 @@ pub fn first_title(markdown: &str) -> Option<String> {
 }
 
 /// Convert Markdown into a complete Typst source document.
+///
+/// Mermaid diagrams and Liquid highlighting are collected during parsing and
+/// rendered asynchronously on a multi-thread Tokio runtime via `spawn_blocking`
+/// so independent fences can overlap on available CPU cores.
 pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
     let parser = Parser::new_ext(markdown, parser_options());
-    let mut liquid_highlighter = None;
     let mut body = String::new();
-    let mut assets = Vec::new();
+    let mut deferred = Vec::new();
+    let mut mermaid_count = 0usize;
     let mut paragraph: Option<InlineBuffer> = None;
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
     let mut code: Option<(String, String)> = None;
@@ -97,10 +101,25 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 Event::End(TagEnd::CodeBlock) => {
                     let (language, source) = code.take().expect("code buffer exists");
                     if is_mermaid_language(&language) {
-                        let (typst, asset) = mermaid_block(&source, options, assets.len())?;
-                        assets.push(asset);
-                        body.push_str(&typst);
+                        let job_index = deferred.len();
+                        deferred.push(DeferredJob::Mermaid {
+                            source,
+                            asset_index: mermaid_count,
+                        });
+                        mermaid_count += 1;
+                        body.push_str(&job_placeholder(job_index));
+                    } else if is_liquid_language(&language) {
+                        let job_index = deferred.len();
+                        deferred.push(DeferredJob::Liquid {
+                            source,
+                            max_columns: max_code_columns(options),
+                            max_lines: max_code_lines(options),
+                            line_numbers: options.line_numbers,
+                            theme: options.code_theme,
+                        });
+                        body.push_str(&job_placeholder(job_index));
                     } else {
+                        let mut unused_highlighter = None;
                         body.push_str(&code_block(
                             &source,
                             &language,
@@ -108,7 +127,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                             max_code_lines(options),
                             options.line_numbers,
                             options.code_theme,
-                            &mut liquid_highlighter,
+                            &mut unused_highlighter,
                         )?);
                     }
                 }
@@ -324,10 +343,122 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         }
     }
 
+    let rendered = render_jobs_async(deferred, options)?;
+    let mut assets = vec![None; mermaid_count];
+    for (job_index, output) in rendered.into_iter().enumerate() {
+        let marker = job_placeholder(job_index);
+        body = body.replacen(&marker, &output.typst, 1);
+        if let Some((asset_index, asset)) = output.asset {
+            assets[asset_index] = Some(asset);
+        }
+    }
+    let assets = assets
+        .into_iter()
+        .enumerate()
+        .map(|(index, asset)| {
+            asset.ok_or_else(|| Error::Mermaid(format!("missing Mermaid asset {index}")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
     Ok(TypstDocument {
         source: format!("{}\n{}", template(options), body),
         assets,
     })
+}
+
+#[derive(Debug)]
+enum DeferredJob {
+    Mermaid {
+        source: String,
+        asset_index: usize,
+    },
+    Liquid {
+        source: String,
+        max_columns: usize,
+        max_lines: usize,
+        line_numbers: bool,
+        theme: CodeTheme,
+    },
+}
+
+struct JobOutput {
+    typst: String,
+    asset: Option<(usize, (String, Vec<u8>))>,
+}
+
+fn job_placeholder(index: usize) -> String {
+    format!("<<<MD2PDF_ASYNC_JOB_{index}>>>")
+}
+
+fn render_jobs_async(jobs: Vec<DeferredJob>, options: &TypstOptions) -> Result<Vec<JobOutput>> {
+    if jobs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let worker_threads = std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(4)
+        .clamp(2, 8);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .thread_name("md2pdf-async")
+        .enable_all()
+        .build()
+        .map_err(|error| Error::Pdf(format!("failed to start async runtime: {error}")))?;
+
+    let options = options.clone();
+    runtime.block_on(async move {
+        let mut handles = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            let options = options.clone();
+            handles.push(tokio::task::spawn_blocking(move || {
+                render_deferred_job(job, &options)
+            }));
+        }
+
+        let mut outputs = Vec::with_capacity(handles.len());
+        for handle in handles {
+            let output = handle
+                .await
+                .map_err(|error| Error::Pdf(format!("async worker join failed: {error}")))?;
+            outputs.push(output?);
+        }
+        Ok(outputs)
+    })
+}
+
+fn render_deferred_job(job: DeferredJob, options: &TypstOptions) -> Result<JobOutput> {
+    match job {
+        DeferredJob::Mermaid {
+            source,
+            asset_index,
+        } => {
+            let (typst, asset) = mermaid_block(&source, options, asset_index)?;
+            Ok(JobOutput {
+                typst,
+                asset: Some((asset_index, asset)),
+            })
+        }
+        DeferredJob::Liquid {
+            source,
+            max_columns,
+            max_lines,
+            line_numbers,
+            theme,
+        } => {
+            let mut highlighter = Some(SyntaxHighlighter::new(theme)?);
+            let typst = code_block(
+                &source,
+                "liquid",
+                max_columns,
+                max_lines,
+                line_numbers,
+                theme,
+                &mut highlighter,
+            )?;
+            Ok(JobOutput { typst, asset: None })
+        }
+    }
 }
 
 fn template(options: &TypstOptions) -> String {

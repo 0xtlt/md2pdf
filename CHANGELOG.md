@@ -5,6 +5,12 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- render Mermaid diagrams and Liquid highlighting asynchronously with Tokio
+  `spawn_blocking` so independent fences can overlap across CPU cores;
+- add a heavy Mermaid/Liquid benchmark fixture and sync-vs-async measurements.
+
 ### Added
 
 - added in-process Mermaid diagram support for `mermaid` and `mmd` fenced

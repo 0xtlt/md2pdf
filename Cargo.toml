@@ -20,6 +20,7 @@ shiki = { version = "0.0.7", default-features = false }
 shiki-macros = "0.0.7"
 syntect = { version = "5.3.0", default-features = false, features = ["regex-onig"] }
 thiserror = "2.0.18"
+tokio = { version = "1.47.1", default-features = false, features = ["rt-multi-thread"] }
 typst = "0.15.0"
 typst-as-lib = "0.16.0"
 typst-layout = "0.15.0"
