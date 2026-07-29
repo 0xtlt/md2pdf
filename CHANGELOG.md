@@ -5,6 +5,24 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- added in-process Mermaid diagram support for `mermaid` and `mmd` fenced
+  blocks, rendered to SVG without a browser or Node.js runtime;
+- sized Mermaid diagrams to the printable page area, cropping excess canvas
+  padding and converting CSS-pixel dimensions to print-friendly widths;
+- sized large Mermaid diagrams more generously so complex charts stay readable
+  while simple ones remain compact.
+
+### Fixed
+
+- fixed Mermaid SVG cropping so flowchart diamonds and circular nodes are not
+  clipped;
+- rendered Mermaid diagrams with the classic light palette instead of following
+  the dark code-block theme;
+- refreshed the README preview asset (`preview-v2.png`) so Mermaid diagrams
+  show the light palette.
+
 ## [3.2.0] - 2026-07-28
 
 ### Added

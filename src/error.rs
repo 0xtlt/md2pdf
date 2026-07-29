@@ -27,6 +27,9 @@ pub enum Error {
     /// Loading a bundled grammar or highlighting a code block failed.
     #[error("syntax highlighting failed: {0}")]
     Highlight(String),
+    /// Rendering a fenced Mermaid diagram failed.
+    #[error("Mermaid diagram failed: {0}")]
+    Mermaid(String),
     /// Reading the Markdown source failed.
     #[error("failed to read {path}: {source}")]
     Read {

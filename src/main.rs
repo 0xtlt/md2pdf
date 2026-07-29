@@ -62,7 +62,7 @@ fn run(cli: Cli) -> Result<()> {
             page_break_prefixes: cli.page_break_before.clone(),
         },
     )?;
-    let pages = pdf::render(&typst, &output, &source_dir)?;
+    let pages = pdf::render(&typst.source, &output, &source_dir, &typst.assets)?;
     if !cli.quiet {
         println!(
             "PDF generated ({pages} page(s)): {}",

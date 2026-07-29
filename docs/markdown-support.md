@@ -17,6 +17,7 @@
 | Horizontal rules | Yes | Full-width separator |
 | Inline code | Yes | Monospace font |
 | Fenced code blocks | Yes | Language follows the opening fence |
+| Mermaid diagrams | Yes | `mermaid` / `mmd` fences rendered to SVG |
 | Raw HTML | Partial | Displayed as text |
 | Footnotes | Partial | Superscript reference only |
 | Mathematics | Partial | Displayed as raw content |
@@ -31,6 +32,19 @@ Unknown identifiers fall back to plain text. Long lines are wrapped visually.
 
 See [Syntax highlighting](syntax-highlighting.md) for tested identifiers and
 examples.
+
+## Mermaid diagrams
+
+Fenced blocks tagged `mermaid` or `mmd` are rendered to SVG with a pure-Rust
+Mermaid engine and embedded as centered images. Diagrams use Mermaid's classic
+light palette so they match the light PDF page. Labels use the embedded DejaVu
+Sans font. Simple diagrams stay compact; large diagrams may use more of the page
+so text remains readable. Invalid Mermaid source fails PDF generation with a
+clear error. No browser or Node.js runtime is required.
+
+Supported diagram families include flowcharts, sequence, class, state, ER, pie,
+XY, quadrant, gantt, timeline, journey, mindmap, and git graphs, subject to the
+embedded renderer.
 
 ## Images
 

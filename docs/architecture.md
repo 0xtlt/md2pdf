@@ -7,16 +7,18 @@
 ```text
 Markdown
   -> pulldown-cmark events
-  -> TextMate syntax highlighting
-  -> in-memory Typst document
-  -> Typst page layout
-  -> PDF serialization
+    -> TextMate syntax highlighting
+    -> Mermaid fences rendered to SVG
+    -> in-memory Typst document
+    -> Typst page layout
+    -> PDF serialization
 ```
 
 The binary embeds the DejaVu fonts, syntax themes, and a precompiled Liquid
 TextMate grammar. General-purpose fenced code uses Typst's complete
-Syntect/two-face catalog with the native Oniguruma backend. The target machine
-does not need Python, a browser, LaTeX, or the Typst executable.
+Syntect/two-face catalog with the native Oniguruma backend. Mermaid diagrams
+are rendered to SVG in process with a pure-Rust Mermaid engine. The target
+machine does not need Python, a browser, LaTeX, or the Typst executable.
 
 ## Modules
 
@@ -24,7 +26,7 @@ does not need Python, a browser, LaTeX, or the Typst executable.
 | --- | --- |
 | `cli` | Command-line arguments and accepted values |
 | `highlight` | Liquid TextMate grammar, themes, and Typst token conversion |
-| `markdown` | Markdown event conversion into Typst source |
+| `markdown` | Markdown event conversion into Typst source and Mermaid assets |
 | `pdf` | Typst compilation, file resolution, and PDF writing |
 | `error` | Structured errors and user-facing CLI messages |
 | `main` | Validation, input handling, and orchestration |
@@ -32,7 +34,9 @@ does not need Python, a browser, LaTeX, or the Typst executable.
 ## Markdown conversion
 
 `pulldown-cmark` produces a stream of events. The converter only keeps state for
-the current paragraph, heading, code block, image, list, or table.
+the current paragraph, heading, code block, image, list, or table. Fenced
+`mermaid` / `mmd` blocks are rendered to SVG, attached as in-memory virtual
+assets, and resolved by Typst before the filesystem resolver.
 
 User text is never inserted directly into Typst syntax. Quotes, backslashes,
 line breaks, carriage returns, and tabs are escaped before source generation.
