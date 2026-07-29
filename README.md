@@ -10,7 +10,7 @@ links, Mermaid diagrams, and syntax highlighting.
 
 **No Python, browser, LaTeX, or external runtime is required.**
 
-![Generated PDF preview](docs/assets/preview.png)
+![Generated PDF preview](docs/assets/preview-v2.png)
 
 ## Quick start
 

@@ -1,4 +1,4 @@
-use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
+use mermaid_rs_renderer::{RenderOptions, render_with_options};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::{
@@ -519,19 +519,22 @@ fn mermaid_block(
     options: &TypstOptions,
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
-    let mut render_options = RenderOptions {
-        // PDF pages are light; keep diagrams on the classic Mermaid palette
-        // instead of following the dark code-block theme.
-        theme: Theme::mermaid_default(),
-        ..RenderOptions::default()
-    };
+    // PDF pages are always light. Never inherit `--code-theme dark` or the
+    // crate's modern/default palette for diagrams.
+    let mut render_options = RenderOptions::mermaid_default();
     // Typst resolves a single SVG font family; use the embedded DejaVu face.
     render_options.theme.font_family = "DejaVu Sans".to_owned();
     // Slightly denser than Mermaid's screen defaults so diagrams match print text.
     render_options.theme.font_size = 12.0;
+    render_options.theme.background = "#FFFFFF".to_owned();
+    render_options.theme.primary_color = "#ECECFF".to_owned();
+    render_options.theme.primary_text_color = "#333333".to_owned();
+    render_options.theme.primary_border_color = "#7B88A8".to_owned();
+    render_options.theme.line_color = "#2F3B4D".to_owned();
+    render_options.theme.text_color = "#333333".to_owned();
     let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
-    let svg = crop_mermaid_svg(&svg);
+    let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg));
     let path = format!("md2pdf-mermaid-{index}.svg");
     let width_mm = mermaid_display_width_mm(&svg, options);
     let typst = format!(
@@ -540,6 +543,32 @@ fn mermaid_block(
         typst_string(&path)
     );
     Ok((typst, (path, svg.into_bytes())))
+}
+
+/// Keep the Mermaid canvas background white even if a dark theme leaks through.
+fn force_light_mermaid_background(svg: &str) -> String {
+    let Some(start) = svg.find("<rect") else {
+        return svg.to_owned();
+    };
+    let Some(end_rel) = svg[start..].find("/>") else {
+        return svg.to_owned();
+    };
+    let end = start + end_rel + 2;
+    let tag = &svg[start..end];
+    if tag.contains("rx=") {
+        return svg.to_owned();
+    }
+    let is_dark_canvas = tag.contains("fill=\"#333333\"")
+        || tag.contains("fill=\"#333\"")
+        || tag.contains("fill=\"#1f2020\"")
+        || tag.contains("fill=\"#1F2020\"")
+        || tag.contains("fill=\"#0d1117\"")
+        || tag.contains("fill=\"#0D1117\"");
+    if !is_dark_canvas {
+        return svg.to_owned();
+    }
+    let replacement = replace_attr(tag, "fill", "#FFFFFF");
+    format!("{}{}{}", &svg[..start], replacement, &svg[end..])
 }
 
 /// Remove excess Mermaid canvas padding so sizing uses the drawn content.
@@ -1305,6 +1334,33 @@ mod tests {
         );
         assert!(document.source.contains("mm)"));
         assert!(!document.source.contains("lang: \"mermaid\""));
+    }
+
+    #[test]
+    fn mermaid_diagrams_use_light_palette_even_with_dark_code_theme() {
+        let mut opts = options();
+        opts.code_theme = CodeTheme::Dark;
+        let document = to_typst(
+            "# Diagram\n\n```mermaid\nflowchart LR\n    Markdown --> Typst --> PDF\n```\n",
+            &opts,
+        )
+        .expect("render mermaid");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+        let first_rect_end = svg.find("/>").expect("background rect");
+        let background = &svg[..first_rect_end];
+        assert!(
+            background.contains("fill=\"#FFFFFF\""),
+            "expected white Mermaid canvas, got: {background}"
+        );
+        assert!(
+            svg.contains("fill=\"#ECECFF\""),
+            "expected classic light node fill: {svg}"
+        );
+        assert!(
+            !background.contains("fill=\"#333333\""),
+            "dark Mermaid canvas must not appear on PDF pages"
+        );
+        assert!(svg.contains("fill=\"#333333\"") || svg.contains(">Markdown<"));
     }
 
     #[test]
