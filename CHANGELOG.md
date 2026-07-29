@@ -17,7 +17,9 @@ All notable changes are documented in this file. The format follows
 ### Fixed
 
 - fixed Mermaid SVG cropping so flowchart diamonds and circular nodes are not
-  clipped.
+  clipped;
+- rendered Mermaid diagrams with the classic light palette instead of following
+  the dark code-block theme.
 
 ## [3.2.0] - 2026-07-28
 

@@ -520,10 +520,9 @@ fn mermaid_block(
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
     let mut render_options = RenderOptions {
-        theme: match options.code_theme {
-            CodeTheme::Dark => Theme::dark(),
-            CodeTheme::Light => Theme::mermaid_default(),
-        },
+        // PDF pages are light; keep diagrams on the classic Mermaid palette
+        // instead of following the dark code-block theme.
+        theme: Theme::mermaid_default(),
         ..RenderOptions::default()
     };
     // Typst resolves a single SVG font family; use the embedded DejaVu face.

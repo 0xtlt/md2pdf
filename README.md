@@ -141,9 +141,9 @@ examples, aliases, fallback behavior, and implementation details.
 ### Mermaid diagrams
 
 Fenced `mermaid` (or `mmd`) blocks are rendered to SVG in process and embedded
-as images. The diagram palette follows `--code-theme`. Simple diagrams stay
-compact; larger ones scale up for readability. Invalid Mermaid source stops PDF
-generation with an error.
+as images. Diagrams use Mermaid's classic light palette to match the PDF page.
+Simple diagrams stay compact; larger ones scale up for readability. Invalid
+Mermaid source stops PDF generation with an error.
 
 ````markdown
 ```mermaid
