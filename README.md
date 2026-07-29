@@ -44,10 +44,23 @@ Line numbers are **disabled by default**. They only appear when
 
 ### Homebrew
 
+Homebrew core already ships a **different** Go-based `md2pdf`
+([solworktech/md2pdf](https://github.com/solworktech/md2pdf)). Install this Rust
+build with the fully-qualified formula name:
+
 ```console
-brew tap 0xtlt/tap
-brew install md2pdf
+brew install 0xtlt/tap/md2pdf
 ```
+
+If `md2pdf --help` mentions `md2pdf.go` or only short flags like `-i` / `-o`, you
+have the Go package. Switch with:
+
+```console
+brew uninstall md2pdf
+brew install 0xtlt/tap/md2pdf
+```
+
+Confirm with `md2pdf --version` — the Rust CLI prints `md2pdf 3.x.x`.
 
 Tagged releases update [`0xtlt/homebrew-tap`](https://github.com/0xtlt/homebrew-tap) automatically.
 

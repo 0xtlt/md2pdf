@@ -76,6 +76,20 @@ class Md2pdf < Formula
     bin.install binary => "md2pdf"
   end
 
+  def caveats
+    <<~EOS
+      This is the Rust md2pdf from ${SOURCE_REPO}.
+
+      Homebrew core ships a different Go-based md2pdf (solworktech/md2pdf).
+      Always install this formula with the fully-qualified name:
+
+        brew install 0xtlt/tap/md2pdf
+
+      If \`md2pdf --help\` mentions md2pdf.go or only -i/-o flags, uninstall the
+      core package first, then reinstall from this tap.
+    EOS
+  end
+
   test do
     assert_match version.to_s, shell_output("#{bin}/md2pdf --version")
   end
@@ -83,8 +97,10 @@ end
 EOF
 
 tap_dir="${workdir}/homebrew-tap"
-# Ensure git HTTPS pushes authenticate with GH_TOKEN (PAT for the tap repo).
-gh auth setup-git
+# Authenticate HTTPS git pushes with GH_TOKEN (PAT for the tap repo).
+# Prefer an embedded token in the remote URL: credential helpers from
+# `gh auth setup-git` can fail in non-interactive CI with
+# "could not read Username for 'https://github.com'".
 gh repo clone "${TAP_REPO}" "${tap_dir}" -- --depth 1
 git -C "${tap_dir}" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git"
 
@@ -93,12 +109,16 @@ cp "${formula_path}" "${tap_dir}/Formula/md2pdf.rb"
 
 readme="${tap_dir}/README.md"
 if [[ -f "${readme}" ]]; then
-  if ! grep -q 'brew install md2pdf' "${readme}"; then
-    perl -pi -e 's/^(brew install vitrail)$/brew install md2pdf\n$1/m' "${readme}"
+  if ! grep -q 'brew install 0xtlt/tap/md2pdf' "${readme}"; then
+    if grep -q '^brew install md2pdf$' "${readme}"; then
+      perl -pi -e 's/^brew install md2pdf$/brew install 0xtlt\/tap\/md2pdf/' "${readme}"
+    elif grep -q '^brew install vitrail$' "${readme}"; then
+      perl -pi -e 's/^(brew install vitrail)$/brew install 0xtlt\/tap\/md2pdf\n$1/m' "${readme}"
+    fi
   fi
   if ! grep -q '| `md2pdf`' "${readme}"; then
     if ! grep -q '## Available Formulae' "${readme}"; then
-      perl -0pi -e 's/## Available Casks\n/## Available Formulae\n\n| Formula | Description |\n|---------|-------------|\n| `md2pdf` | Fast, standalone Markdown to PDF converter |\n\n## Available Casks\n/' "${readme}"
+      perl -0pi -e 's/## Available Casks\n/## Available Formulae\n\n| Formula | Description |\n|---------|-------------|\n| `md2pdf` | Fast, standalone Markdown to PDF converter (Rust; install as `0xtlt\/tap\/md2pdf`) |\n\n## Available Casks\n/' "${readme}"
     fi
   fi
 fi
@@ -106,6 +126,8 @@ fi
 cd "${tap_dir}"
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+# Avoid any credential helper overriding the token embedded in origin.
+git config --local credential.helper ""
 
 git add Formula/md2pdf.rb
 git add -u README.md 2>/dev/null || true
@@ -116,6 +138,7 @@ if git diff --cached --quiet; then
 fi
 
 git commit -m "md2pdf ${VERSION}"
-git push origin HEAD
+# Push via the tokenized remote URL explicitly (avoids helper / ambiguous remotes).
+git push "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git" "HEAD:$(git rev-parse --abbrev-ref HEAD)"
 
 echo "Updated ${TAP_REPO} Formula/md2pdf.rb to ${VERSION}"

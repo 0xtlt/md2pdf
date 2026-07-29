@@ -57,3 +57,7 @@ The tap update job needs a repository secret named `HOMEBREW_TAP_TOKEN`: a
 classic PAT or fine-grained token with **Contents: Read and write** on
 `0xtlt/homebrew-tap`. Without that secret the release still publishes; the tap
 step is skipped with a warning.
+
+Install from the tap with the fully-qualified name
+`brew install 0xtlt/tap/md2pdf`. Plain `brew install md2pdf` resolves to
+Homebrew core's unrelated Go package.

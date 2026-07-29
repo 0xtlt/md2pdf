@@ -5,6 +5,13 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- document that Homebrew core's Go `md2pdf` collides with this formula, and
+  require `brew install 0xtlt/tap/md2pdf`;
+- harden the Homebrew tap updater so formula pushes authenticate reliably and
+  warn about the core name collision in formula caveats.
+
 ## [3.2.1] - 2026-07-29
 
 ### Changed
@@ -27,7 +34,7 @@ All notable changes are documented in this file. The format follows
   while simple ones remain compact;
 - publish macOS Intel (`x86_64`) release archives alongside Apple Silicon;
 - update [`0xtlt/homebrew-tap`](https://github.com/0xtlt/homebrew-tap) on each
-  tagged release so `brew install md2pdf` stays current.
+  tagged release so `brew install 0xtlt/tap/md2pdf` stays current.
 
 ### Fixed
 
