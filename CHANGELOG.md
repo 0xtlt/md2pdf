@@ -95,7 +95,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.0...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.1...HEAD
+[3.2.1]: https://github.com/0xtlt/md2pdf/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/0xtlt/md2pdf/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/0xtlt/md2pdf/compare/v3.0.1...v3.1.0
 [3.0.1]: https://github.com/0xtlt/md2pdf/compare/v3.0.0...v3.0.1

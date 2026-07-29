@@ -83,7 +83,10 @@ end
 EOF
 
 tap_dir="${workdir}/homebrew-tap"
+# Ensure git HTTPS pushes authenticate with GH_TOKEN (PAT for the tap repo).
+gh auth setup-git
 gh repo clone "${TAP_REPO}" "${tap_dir}" -- --depth 1
+git -C "${tap_dir}" remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${TAP_REPO}.git"
 
 mkdir -p "${tap_dir}/Formula"
 cp "${formula_path}" "${tap_dir}/Formula/md2pdf.rb"

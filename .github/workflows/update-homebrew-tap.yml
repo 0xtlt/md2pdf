@@ -1,0 +1,29 @@
+name: Update Homebrew tap
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "md2pdf version to publish to the tap (without leading v)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew-tap:
+    name: Update Homebrew tap
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Update 0xtlt/homebrew-tap formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          chmod +x scripts/update-homebrew-tap.sh
+          scripts/update-homebrew-tap.sh
