@@ -12,7 +12,10 @@ All notable changes are documented in this file. The format follows
 - sized Mermaid diagrams to the printable page area, cropping excess canvas
   padding and converting CSS-pixel dimensions to print-friendly widths;
 - sized large Mermaid diagrams more generously so complex charts stay readable
-  while simple ones remain compact;
+  while simple ones remain compact.
+
+### Fixed
+
 - fixed Mermaid SVG cropping so flowchart diamonds and circular nodes are not
   clipped.
 

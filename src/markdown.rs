@@ -557,15 +557,12 @@ fn crop_mermaid_svg(svg: &str) -> String {
     let pad = 16.0;
     let x = min_x - pad;
     let y = min_y - pad;
-    let width = (max_x - min_x) + 2.0 * pad;
-    let height = (max_y - min_y) + 2.0 * pad;
-    // Skip crop when there is no meaningful letterbox, or when crop would expand.
+    let width = ((max_x - min_x) + 2.0 * pad).min(canvas_w);
+    let height = ((max_y - min_y) + 2.0 * pad).min(canvas_h);
+    // Skip crop when there is no meaningful letterbox.
     let saved_w = canvas_w - width;
     let saved_h = canvas_h - height;
     if saved_w < 24.0 && saved_h < 24.0 {
-        return svg.to_owned();
-    }
-    if width >= canvas_w && height >= canvas_h {
         return svg.to_owned();
     }
     let _ = (canvas_x, canvas_y);
@@ -670,6 +667,10 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
             svg_tag_number(tag, "cy"),
             svg_tag_number(tag, "r"),
         ) {
+            // Skip tiny marker dots expressed in local transform space.
+            if r < 10.0 && cx.abs() < 20.0 && cy.abs() < 20.0 {
+                continue;
+            }
             include_bounds(
                 &mut min_x,
                 &mut min_y,
@@ -834,10 +835,21 @@ fn svg_tag_number(tag: &str, name: &str) -> Option<f32> {
 }
 
 fn svg_tag_attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
-    let key = format!("{name}=\"");
-    let start = tag.find(&key)? + key.len();
-    let end = start + tag[start..].find('"')?;
-    Some(&tag[start..end])
+    let keyed = format!("{name}=\"");
+    let mut search_from = 0usize;
+    while let Some(relative) = tag[search_from..].find(&keyed) {
+        let start = search_from + relative;
+        let boundary_ok = start == 0
+            || tag.as_bytes()[start - 1].is_ascii_whitespace()
+            || tag.as_bytes()[start - 1] == b'<';
+        if boundary_ok {
+            let value_start = start + keyed.len();
+            let end = value_start + tag[value_start..].find('"')?;
+            return Some(&tag[value_start..end]);
+        }
+        search_from = start + keyed.len();
+    }
+    None
 }
 
 fn path_coordinate_pairs(path: &str) -> Vec<(f32, f32)> {
@@ -1346,6 +1358,36 @@ mod tests {
                 "diamond point ({x},{y}) outside viewBox {vx} {vy} {vw} {vh}"
             );
         }
+    }
+
+    #[test]
+    fn crops_padded_diamond_without_clipping_vertices() {
+        let svg = concat!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"400\" ",
+            "viewBox=\"-50 -50 400 400\">",
+            "<rect x=\"-50\" y=\"-50\" width=\"400\" height=\"400\" fill=\"#FFFFFF\"/>",
+            "<polygon points=\"100,20 180,100 100,180 20,100\" fill=\"#ccc\"/>",
+            "<rect x=\"60\" y=\"220\" width=\"80\" height=\"40\" rx=\"3\" ry=\"3\" fill=\"#EAEAEA\"/>",
+            "</svg>"
+        );
+        let cropped = crop_mermaid_svg(svg);
+        let (vx, vy, vw, vh) = svg_view_box(&cropped).expect("viewBox");
+        assert!(vw < 400.0 && vh < 400.0, "expected crop, got {vw}x{vh}");
+        for (x, y) in [(100.0, 20.0), (180.0, 100.0), (100.0, 180.0), (20.0, 100.0)] {
+            assert!(
+                x >= vx && x <= vx + vw && y >= vy && y <= vy + vh,
+                "diamond vertex ({x},{y}) outside cropped viewBox {vx} {vy} {vw} {vh}"
+            );
+        }
+    }
+
+    #[test]
+    fn svg_tag_attr_ignores_prefixed_attribute_names() {
+        let tag = "<ellipse cx=\"10\" cy=\"20\" rx=\"5\" ry=\"6\" stroke-width=\"2\" width=\"9\" x=\"3\"/>";
+        assert_eq!(svg_tag_attr(tag, "x"), Some("3"));
+        assert_eq!(svg_tag_attr(tag, "width"), Some("9"));
+        assert_eq!(svg_tag_attr(tag, "cx"), Some("10"));
+        assert_eq!(svg_tag_attr(tag, "rx"), Some("5"));
     }
 
     #[test]
