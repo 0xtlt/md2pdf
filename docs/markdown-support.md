@@ -37,8 +37,10 @@ examples.
 
 Fenced blocks tagged `mermaid` or `mmd` are rendered to SVG with a pure-Rust
 Mermaid engine and embedded as centered images. The diagram theme follows
-`--code-theme` (`dark` or light). Invalid Mermaid source fails PDF generation
-with a clear error. No browser or Node.js runtime is required.
+`--code-theme` (`dark` or light). Labels use the embedded DejaVu Sans font.
+Simple diagrams stay compact; large diagrams may use more of the page so text
+remains readable. Invalid Mermaid source fails PDF generation with a clear
+error. No browser or Node.js runtime is required.
 
 Supported diagram families include flowcharts, sequence, class, state, ER, pie,
 XY, quadrant, gantt, timeline, journey, mindmap, and git graphs, subject to the

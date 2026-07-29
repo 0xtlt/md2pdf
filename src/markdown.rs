@@ -545,6 +545,9 @@ fn mermaid_block(
 
 /// Remove excess Mermaid canvas padding so sizing uses the drawn content.
 fn crop_mermaid_svg(svg: &str) -> String {
+    let Some((canvas_x, canvas_y, canvas_w, canvas_h)) = svg_view_box(svg) else {
+        return svg.to_owned();
+    };
     let Some((min_x, min_y, max_x, max_y)) = mermaid_svg_content_bounds(svg) else {
         return svg.to_owned();
     };
@@ -556,6 +559,16 @@ fn crop_mermaid_svg(svg: &str) -> String {
     let y = min_y - pad;
     let width = (max_x - min_x) + 2.0 * pad;
     let height = (max_y - min_y) + 2.0 * pad;
+    // Skip crop when there is no meaningful letterbox, or when crop would expand.
+    let saved_w = canvas_w - width;
+    let saved_h = canvas_h - height;
+    if saved_w < 24.0 && saved_h < 24.0 {
+        return svg.to_owned();
+    }
+    if width >= canvas_w && height >= canvas_h {
+        return svg.to_owned();
+    }
+    let _ = (canvas_x, canvas_y);
     let mut output = replace_svg_root_dimensions(svg, width, height, x, y, width, height);
     output = replace_svg_background_rect(&output, x, y, width, height);
     output
@@ -622,6 +635,92 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
         }
     }
 
+    for (index, _) in without_defs.match_indices("<polygon") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        let Some(points) = svg_tag_attr(tag, "points") else {
+            continue;
+        };
+        // Skip tiny marker arrowheads expressed in local transform space.
+        if let Some((poly_min_x, poly_min_y, poly_max_x, poly_max_y)) = polygon_bounds(points) {
+            let poly_w = poly_max_x - poly_min_x;
+            let poly_h = poly_max_y - poly_min_y;
+            if poly_w < 20.0 && poly_h < 20.0 {
+                continue;
+            }
+            include_bounds(
+                &mut min_x, &mut min_y, &mut max_x, &mut max_y, poly_min_x, poly_min_y,
+            );
+            include_bounds(
+                &mut min_x, &mut min_y, &mut max_x, &mut max_y, poly_max_x, poly_max_y,
+            );
+            found = true;
+        }
+    }
+
+    for (index, _) in without_defs.match_indices("<circle") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        if let (Some(cx), Some(cy), Some(r)) = (
+            svg_tag_number(tag, "cx"),
+            svg_tag_number(tag, "cy"),
+            svg_tag_number(tag, "r"),
+        ) {
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                cx - r,
+                cy - r,
+            );
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                cx + r,
+                cy + r,
+            );
+            found = true;
+        }
+    }
+
+    for (index, _) in without_defs.match_indices("<ellipse") {
+        let Some(end) = without_defs[index..].find('>') else {
+            continue;
+        };
+        let tag = &without_defs[index..index + end];
+        if let (Some(cx), Some(cy), Some(rx), Some(ry)) = (
+            svg_tag_number(tag, "cx"),
+            svg_tag_number(tag, "cy"),
+            svg_tag_number(tag, "rx"),
+            svg_tag_number(tag, "ry"),
+        ) {
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                cx - rx,
+                cy - ry,
+            );
+            include_bounds(
+                &mut min_x,
+                &mut min_y,
+                &mut max_x,
+                &mut max_y,
+                cx + rx,
+                cy + ry,
+            );
+            found = true;
+        }
+    }
+
     for (index, _) in without_defs.match_indices("<text") {
         let Some(end) = without_defs[index..].find('>') else {
             continue;
@@ -665,6 +764,43 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
     found.then_some((min_x, min_y, max_x, max_y))
 }
 
+fn polygon_bounds(points: &str) -> Option<(f32, f32, f32, f32)> {
+    let mut min_x = f32::INFINITY;
+    let mut min_y = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut max_y = f32::NEG_INFINITY;
+    let mut found = false;
+    for pair in points.split_whitespace() {
+        let mut parts = pair.split(',');
+        let Some(x) = parts.next().and_then(|value| value.parse().ok()) else {
+            continue;
+        };
+        let Some(y) = parts.next().and_then(|value| value.parse().ok()) else {
+            continue;
+        };
+        include_bounds(&mut min_x, &mut min_y, &mut max_x, &mut max_y, x, y);
+        found = true;
+    }
+    found.then_some((min_x, min_y, max_x, max_y))
+}
+
+fn svg_view_box(svg: &str) -> Option<(f32, f32, f32, f32)> {
+    let view_box = svg_attr(svg, "viewBox")?;
+    let parts = view_box
+        .split(|character: char| character.is_whitespace() || character == ',')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>();
+    if parts.len() != 4 {
+        return None;
+    }
+    Some((
+        parts[0].parse().ok()?,
+        parts[1].parse().ok()?,
+        parts[2].parse().ok()?,
+        parts[3].parse().ok()?,
+    ))
+}
+
 fn include_bounds(
     min_x: &mut f32,
     min_y: &mut f32,
@@ -694,10 +830,14 @@ fn strip_svg_defs(svg: &str) -> String {
 }
 
 fn svg_tag_number(tag: &str, name: &str) -> Option<f32> {
+    svg_tag_attr(tag, name)?.parse().ok()
+}
+
+fn svg_tag_attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
     let key = format!("{name}=\"");
     let start = tag.find(&key)? + key.len();
     let end = start + tag[start..].find('"')?;
-    tag[start..end].parse().ok()
+    Some(&tag[start..end])
 }
 
 fn path_coordinate_pairs(path: &str) -> Vec<(f32, f32)> {
@@ -807,12 +947,7 @@ fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
             165.0,
         )
     } else {
-        (
-            content_width_pt * 0.52,
-            content_height_pt * 0.38,
-            1.0,
-            95.0,
-        )
+        (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
     };
     let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
@@ -1177,6 +1312,40 @@ mod tests {
             "expected tighter crop, got {width}x{height}: {cropped}"
         );
         assert!(cropped.contains("viewBox=\""));
+    }
+
+    #[test]
+    fn keeps_flowchart_diamonds_inside_cropped_viewbox() {
+        let document = to_typst(
+            "# Decision\n\n```mermaid\nflowchart TD\n  B{Decision} --> C[OK]\n  B --> D[No]\n```\n",
+            &options(),
+        )
+        .expect("render mermaid");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+        let (vx, vy, vw, vh) = svg_view_box(&svg).expect("viewBox");
+        let diamond = svg
+            .match_indices("<polygon")
+            .map(|(index, _)| {
+                let end = svg[index..].find('>').expect("polygon end");
+                &svg[index..index + end]
+            })
+            .find_map(|tag| {
+                let points = svg_tag_attr(tag, "points")?;
+                let bounds = polygon_bounds(points)?;
+                ((bounds.2 - bounds.0) > 20.0 && (bounds.3 - bounds.1) > 20.0).then_some(bounds)
+            })
+            .expect("diamond polygon");
+        for (x, y) in [
+            (diamond.0, (diamond.1 + diamond.3) / 2.0),
+            (diamond.2, (diamond.1 + diamond.3) / 2.0),
+            ((diamond.0 + diamond.2) / 2.0, diamond.1),
+            ((diamond.0 + diamond.2) / 2.0, diamond.3),
+        ] {
+            assert!(
+                x >= vx && x <= vx + vw && y >= vy && y <= vy + vh,
+                "diamond point ({x},{y}) outside viewBox {vx} {vy} {vw} {vh}"
+            );
+        }
     }
 
     #[test]

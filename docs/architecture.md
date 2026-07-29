@@ -35,8 +35,8 @@ machine does not need Python, a browser, LaTeX, or the Typst executable.
 
 `pulldown-cmark` produces a stream of events. The converter only keeps state for
 the current paragraph, heading, code block, image, list, or table. Fenced
-`mermaid` blocks are rendered to SVG and attached as virtual assets before Typst
-compilation.
+`mermaid` / `mmd` blocks are rendered to SVG, attached as in-memory virtual
+assets, and resolved by Typst before the filesystem resolver.
 
 User text is never inserted directly into Typst syntax. Quotes, backslashes,
 line breaks, carriage returns, and tabs are escaped before source generation.
