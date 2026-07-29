@@ -16,6 +16,8 @@ pub mod highlight;
 pub mod markdown;
 /// Embedded Typst compilation and PDF serialization.
 pub mod pdf;
+/// Remote image download and validation for external Markdown assets.
+pub mod remote;
 
 pub use error::{Error, Result};
 pub use markdown::{TypstDocument, TypstOptions};
