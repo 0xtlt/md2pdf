@@ -1,8 +1,8 @@
 //! Core library for the `md2pdf` command-line application.
 //!
 //! The crate converts Markdown events into a self-contained Typst document,
-//! highlights fenced code with TextMate grammars, then compiles the resulting
-//! document into a PDF with embedded fonts.
+//! highlights fenced code with TextMate grammars, renders Mermaid fences to
+//! SVG, then compiles the resulting document into a PDF with embedded fonts.
 
 #![warn(missing_docs)]
 
@@ -18,3 +18,4 @@ pub mod markdown;
 pub mod pdf;
 
 pub use error::{Error, Result};
+pub use markdown::{TypstDocument, TypstOptions};

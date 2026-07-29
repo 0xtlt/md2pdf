@@ -5,6 +5,11 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- added in-process Mermaid diagram support for `mermaid` and `mmd` fenced
+  blocks, rendered to SVG without a browser or Node.js runtime.
+
 ## [3.2.0] - 2026-07-28
 
 ### Added

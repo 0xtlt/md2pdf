@@ -1,7 +1,8 @@
+use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::{
-    Result,
+    Error, Result,
     cli::{CodeTheme, PageSize},
     highlight::{StyledToken, SyntaxHighlighter},
 };
@@ -39,6 +40,15 @@ pub struct TypstOptions {
     pub page_break_prefixes: Vec<String>,
 }
 
+/// Converted Typst document plus virtual binary assets such as Mermaid SVGs.
+#[derive(Clone, Debug, Default)]
+pub struct TypstDocument {
+    /// Complete Typst source ready for compilation.
+    pub source: String,
+    /// In-memory files resolved during PDF compilation (`path` → bytes).
+    pub assets: Vec<(String, Vec<u8>)>,
+}
+
 #[derive(Default)]
 struct InlineBuffer {
     typst: String,
@@ -66,10 +76,11 @@ pub fn first_title(markdown: &str) -> Option<String> {
 }
 
 /// Convert Markdown into a complete Typst source document.
-pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<String> {
+pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
     let parser = Parser::new_ext(markdown, parser_options());
     let mut liquid_highlighter = None;
     let mut body = String::new();
+    let mut assets = Vec::new();
     let mut paragraph: Option<InlineBuffer> = None;
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
     let mut code: Option<(String, String)> = None;
@@ -85,15 +96,22 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<String> {
                 Event::Text(text) => source.push_str(&text),
                 Event::End(TagEnd::CodeBlock) => {
                     let (language, source) = code.take().expect("code buffer exists");
-                    body.push_str(&code_block(
-                        &source,
-                        &language,
-                        max_code_columns(options),
-                        max_code_lines(options),
-                        options.line_numbers,
-                        options.code_theme,
-                        &mut liquid_highlighter,
-                    )?);
+                    if is_mermaid_language(&language) {
+                        let (typst, asset) =
+                            mermaid_block(&source, options.code_theme, assets.len())?;
+                        assets.push(asset);
+                        body.push_str(&typst);
+                    } else {
+                        body.push_str(&code_block(
+                            &source,
+                            &language,
+                            max_code_columns(options),
+                            max_code_lines(options),
+                            options.line_numbers,
+                            options.code_theme,
+                            &mut liquid_highlighter,
+                        )?);
+                    }
                 }
                 _ => {}
             }
@@ -307,7 +325,10 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<String> {
         }
     }
 
-    Ok(format!("{}\n{}", template(options), body))
+    Ok(TypstDocument {
+        source: format!("{}\n{}", template(options), body),
+        assets,
+    })
 }
 
 fn template(options: &TypstOptions) -> String {
@@ -485,6 +506,36 @@ fn is_liquid_language(language: &str) -> bool {
         language.trim().to_ascii_lowercase().as_str(),
         "liquid" | "shopify-liquid"
     )
+}
+
+fn is_mermaid_language(language: &str) -> bool {
+    matches!(
+        normalize_fence_language(language).as_str(),
+        "mermaid" | "mmd"
+    )
+}
+
+fn mermaid_block(
+    source: &str,
+    theme: CodeTheme,
+    index: usize,
+) -> Result<(String, (String, Vec<u8>))> {
+    let options = RenderOptions {
+        theme: match theme {
+            CodeTheme::Dark => Theme::dark(),
+            CodeTheme::Light => Theme::mermaid_default(),
+        },
+        ..RenderOptions::default()
+    };
+    let svg = render_with_options(source.trim(), options)
+        .map_err(|error| Error::Mermaid(error.to_string()))?;
+    let path = format!("md2pdf-mermaid-{index}.svg");
+    let typst = format!(
+        "#block(width: 100%, above: 7pt, below: 18pt)\
+         [#align(center)[#image({}, width: 90%)]]\n\n",
+        typst_string(&path)
+    );
+    Ok((typst, (path, svg.into_bytes())))
 }
 
 fn normalize_fence_language(language: &str) -> String {
@@ -674,15 +725,16 @@ mod tests {
 
     #[test]
     fn converts_markdown_and_code() {
-        let source = to_typst(
+        let document = to_typst(
             "# Test\n\nAn **example** with a [link](https://example.com).\n\n```rust\nfn main() {}\n```",
             &options(),
         )
         .expect("valid bundled highlighter");
-        assert!(source.contains("= #text(\"Test\")"));
-        assert!(source.contains("#link(\"https://example.com\")"));
-        assert!(source.contains("1 │ fn main() {}"));
-        assert!(source.contains("lang: \"rust\""));
+        assert!(document.source.contains("= #text(\"Test\")"));
+        assert!(document.source.contains("#link(\"https://example.com\")"));
+        assert!(document.source.contains("1 │ fn main() {}"));
+        assert!(document.source.contains("lang: \"rust\""));
+        assert!(document.assets.is_empty());
     }
 
     #[test]
@@ -727,16 +779,45 @@ mod tests {
 
     #[test]
     fn renders_standalone_images_as_spaced_blocks() {
-        let typst = to_typst("# Image\n\n![Example](diagram.svg)", &options())
+        let document = to_typst("# Image\n\n![Example](diagram.svg)", &options())
             .expect("valid bundled highlighter");
-        assert!(typst.contains("#image(\"diagram.svg\", width: 90%)"));
-        assert!(typst.contains("above: 7pt, below: 18pt"));
+        assert!(
+            document
+                .source
+                .contains("#image(\"diagram.svg\", width: 90%)")
+        );
+        assert!(document.source.contains("above: 7pt, below: 18pt"));
     }
 
     #[test]
     fn uses_each_code_background_declaration_once() {
-        let typst = to_typst("# Code\n\n```rust\nfn main() {}\n```", &options())
+        let document = to_typst("# Code\n\n```rust\nfn main() {}\n```", &options())
             .expect("valid bundled highlighter");
-        assert_eq!(typst.matches("fill: rgb(\"#0D1117\")").count(), 1);
+        assert_eq!(document.source.matches("fill: rgb(\"#0D1117\")").count(), 1);
+    }
+
+    #[test]
+    fn renders_mermaid_fences_as_virtual_svg_images() {
+        let document = to_typst(
+            "# Diagram\n\n```mermaid\nflowchart LR\n    A --> B\n```\n",
+            &options(),
+        )
+        .expect("render mermaid");
+        assert_eq!(document.assets.len(), 1);
+        assert_eq!(document.assets[0].0, "md2pdf-mermaid-0.svg");
+        assert!(document.assets[0].1.starts_with(b"<svg"));
+        assert!(
+            document
+                .source
+                .contains("#image(\"md2pdf-mermaid-0.svg\", width: 90%)")
+        );
+        assert!(!document.source.contains("lang: \"mermaid\""));
+    }
+
+    #[test]
+    fn rejects_invalid_mermaid_diagrams() {
+        let error = to_typst("# Broken\n\n```mermaid\nnot a diagram\n```\n", &options())
+            .expect_err("invalid mermaid");
+        assert!(error.to_string().contains("Mermaid diagram failed"));
     }
 }

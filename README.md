@@ -6,7 +6,7 @@
 
 A fast, standalone Markdown-to-PDF converter written entirely in Rust. It
 produces polished documents with pagination, local images, tables, clickable
-links, and syntax highlighting.
+links, Mermaid diagrams, and syntax highlighting.
 
 **No Python, browser, LaTeX, or external runtime is required.**
 
@@ -29,6 +29,7 @@ md2pdf document.md --output build/document.pdf
 
 - embedded Typst PDF engine and DejaVu fonts;
 - dark or light TextMate syntax highlighting with a broad language catalog;
+- Mermaid diagrams from `mermaid` / `mmd` fences rendered to SVG in process;
 - automatic wrapping for long code lines;
 - page-safe splitting for large code blocks;
 - clickable PDF links and source-relative local images;
@@ -120,8 +121,8 @@ Run `md2pdf --help` for the complete list.
 ## Supported Markdown
 
 Headings, paragraphs, emphasis, strikethrough, links, local images, nested
-lists, task lists, tables, block quotes, horizontal rules, inline code, and
-fenced code blocks are supported.
+lists, task lists, tables, block quotes, horizontal rules, inline code, fenced
+code blocks, and Mermaid diagrams are supported.
 
 The detailed [Markdown support matrix](docs/markdown-support.md) documents
 behavior and known limitations.
@@ -137,12 +138,25 @@ JSON, and JavaScript support.
 See the [syntax-highlighting documentation](docs/syntax-highlighting.md) for
 examples, aliases, fallback behavior, and implementation details.
 
+### Mermaid diagrams
+
+Fenced `mermaid` (or `mmd`) blocks are rendered to SVG in process and embedded
+as images. The diagram palette follows `--code-theme`. Invalid Mermaid source
+stops PDF generation with an error.
+
+````markdown
+```mermaid
+flowchart LR
+    Markdown --> Typst --> PDF
+```
+````
+
 ## Architecture
 
 The pipeline is intentionally straightforward:
 
 ```text
-Markdown -> pulldown-cmark -> Typst source -> embedded Typst engine -> PDF
+Markdown -> pulldown-cmark -> Typst source (+ Mermaid SVG) -> embedded Typst -> PDF
 ```
 
 Fonts, themes, and the Liquid grammar are compiled into the executable. See the
@@ -174,8 +188,9 @@ RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
 ```
 
 Tests cover Markdown parsing, Typst escaping, code wrapping and pagination,
-the full language catalog, embedded Liquid/HTML highlighting, relative images,
-standard input, CLI errors, and actual PDF generation.
+Mermaid SVG rendering, the full language catalog, embedded Liquid/HTML
+highlighting, relative images, standard input, CLI errors, and actual PDF
+generation.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the complete workflow.
 

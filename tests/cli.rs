@@ -151,3 +151,45 @@ fn rejects_an_invalid_accent_color() {
     assert_eq!(result.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&result.stderr).contains("--accent"));
 }
+
+#[test]
+fn renders_mermaid_diagrams_to_pdf() {
+    let directory = tempdir().expect("temporary directory");
+    let output = directory.path().join("mermaid.pdf");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("mermaid.md");
+
+    let result = binary()
+        .arg(fixture)
+        .arg("--output")
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(result.status.success(), "{:?}", result);
+    let pdf = fs::read(output).expect("read PDF");
+    assert!(pdf.starts_with(b"%PDF-"));
+    assert!(pdf.len() > 15_000);
+}
+
+#[test]
+fn rejects_invalid_mermaid_without_creating_a_pdf() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("broken-mermaid.md");
+    let output = directory.path().join("broken-mermaid.pdf");
+    fs::write(&source, "# Broken\n\n```mermaid\nnot a diagram\n```\n").expect("write markdown");
+
+    let result = binary()
+        .arg(&source)
+        .arg("--output")
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert_eq!(result.status.code(), Some(2));
+    assert!(!output.exists());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("Mermaid"));
+}

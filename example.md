@@ -17,8 +17,16 @@ links](https://www.rust-lang.org/) and `inline code`.
 | Unicode | OK | Symbols: € → ✓, multilingual text supported |
 | Tables | OK | Structured rows with a highlighted header |
 | Code | OK | Highlighting and visual line wrapping |
+| Mermaid | OK | Diagrams rendered to SVG in process |
 
 **Expected result:** the document remains readable on screen and in print.
+
+## Mermaid Diagram
+
+```mermaid
+flowchart LR
+    Markdown --> Typst --> PDF
+```
 
 ## Syntax Highlighting
 
