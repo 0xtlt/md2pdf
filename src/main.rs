@@ -60,8 +60,15 @@ fn run(cli: Cli) -> Result<()> {
             margin_mm: cli.margin,
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
+            source_dir: source_dir.clone(),
+            allow_external: !cli.no_external,
         },
     )?;
+    if !cli.quiet {
+        for warning in &typst.warnings {
+            eprintln!("md2pdf: warning: {warning}");
+        }
+    }
     let pages = pdf::render(&typst.source, &output, &source_dir, &typst.assets)?;
     if !cli.quiet {
         println!(

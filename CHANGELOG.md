@@ -5,10 +5,18 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- download remote Markdown images by default and embed them as virtual Typst
+  assets; pass `--no-external` to deny external HTTP(S) data;
+- emit `md2pdf: warning:` lines for skipped remote or missing local images
+  (suppressed by `--quiet`), keeping alt text so linked badges still work.
+
 ### Fixed
 
-- omit remote `http(s)` images instead of failing PDF generation when Typst
-  cannot fetch them (README badges and similar), keeping alt text for links;
+- stop surfacing raw Typst `SourceDiagnostic` dumps; PDF engine failures now
+  print short human-readable messages;
+- omit broken local image paths instead of failing PDF generation;
 - document that Homebrew core's Go `md2pdf` collides with this formula, and
   require `brew install 0xtlt/tap/md2pdf`;
 - harden the Homebrew tap updater so formula pushes authenticate reliably and

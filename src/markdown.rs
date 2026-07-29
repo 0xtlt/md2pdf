@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use mermaid_rs_renderer::{RenderOptions, render_with_options};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
@@ -5,6 +7,7 @@ use crate::{
     Error, Result,
     cli::{CodeTheme, PageSize},
     highlight::{StyledToken, SyntaxHighlighter},
+    remote::{download_image, is_remote_image_url},
 };
 
 const POINTS_PER_MM: f32 = 2.834_646;
@@ -38,6 +41,10 @@ pub struct TypstOptions {
     pub show_header: bool,
     /// H2 title prefixes that should start on a new page.
     pub page_break_prefixes: Vec<String>,
+    /// Directory used to resolve local Markdown images.
+    pub source_dir: PathBuf,
+    /// Whether remote `http(s)` images may be downloaded and embedded.
+    pub allow_external: bool,
 }
 
 /// Converted Typst document plus virtual binary assets such as Mermaid SVGs.
@@ -47,6 +54,8 @@ pub struct TypstDocument {
     pub source: String,
     /// In-memory files resolved during PDF compilation (`path` → bytes).
     pub assets: Vec<(String, Vec<u8>)>,
+    /// Non-fatal issues such as skipped or failed images.
+    pub warnings: Vec<String>,
 }
 
 #[derive(Default)]
@@ -90,11 +99,14 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
     let mut code: Option<(String, String)> = None;
     let mut image_depth = 0usize;
-    let mut remote_image_depth = 0usize;
+    let mut omitted_image_depth = 0usize;
     let mut standalone_image = false;
     let mut list_stack: Vec<Option<u64>> = Vec::new();
     let mut in_table_head = false;
     let mut in_table_cell = false;
+    let mut image_assets = Vec::new();
+    let mut warnings = Vec::new();
+    let mut remote_image_index = 0usize;
 
     for event in parser {
         if let Some((_, source)) = &mut code {
@@ -244,35 +256,43 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 body.push_str("],\n");
             }
             Event::Start(Tag::Image { dest_url, .. }) => {
-                // Typst has no network access. Skip remote images and keep any
-                // alt text so linked badges still render as clickable labels.
-                if is_remote_image_url(&dest_url) {
-                    remote_image_depth += 1;
-                } else {
-                    image_depth += 1;
-                    standalone_image = paragraph
-                        .as_ref()
-                        .is_some_and(|buffer| buffer.typst.is_empty());
-                    if standalone_image {
-                        paragraph.take();
-                        body.push_str(&format!(
-                            "#block(width: 100%, above: 7pt, below: 18pt)\
-                             [#align(center)[#image({}, width: 90%)]]\n\n",
-                            typst_string(&dest_url)
-                        ));
-                    } else {
-                        push_inline(
-                            &mut paragraph,
-                            &mut heading,
-                            &format!("#image({}, height: 1em)", typst_string(&dest_url)),
-                            "",
-                        );
+                match resolve_image(
+                    &dest_url,
+                    options,
+                    &mut image_assets,
+                    &mut warnings,
+                    &mut remote_image_index,
+                ) {
+                    Some(image_path) => {
+                        image_depth += 1;
+                        standalone_image = paragraph
+                            .as_ref()
+                            .is_some_and(|buffer| buffer.typst.is_empty());
+                        if standalone_image {
+                            paragraph.take();
+                            body.push_str(&format!(
+                                "#block(width: 100%, above: 7pt, below: 18pt)\
+                                 [#align(center)[#image({}, width: 90%)]]\n\n",
+                                typst_string(&image_path)
+                            ));
+                        } else {
+                            push_inline(
+                                &mut paragraph,
+                                &mut heading,
+                                &format!("#image({}, height: 1em)", typst_string(&image_path)),
+                                "",
+                            );
+                        }
+                    }
+                    None => {
+                        // Keep alt text so linked badges still render as labels.
+                        omitted_image_depth += 1;
                     }
                 }
             }
             Event::End(TagEnd::Image) => {
-                if remote_image_depth > 0 {
-                    remote_image_depth -= 1;
+                if omitted_image_depth > 0 {
+                    omitted_image_depth -= 1;
                 } else {
                     image_depth = image_depth.saturating_sub(1);
                     if standalone_image {
@@ -345,9 +365,14 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
 
     let rendered = render_mermaid_async(deferred, options)?;
     let source = format!("{}\n{}", template(options), body.finish(&rendered));
-    let assets = rendered.into_iter().map(|output| output.asset).collect();
+    let mut assets = image_assets;
+    assets.extend(rendered.into_iter().map(|output| output.asset));
 
-    Ok(TypstDocument { source, assets })
+    Ok(TypstDocument {
+        source,
+        assets,
+        warnings,
+    })
 }
 
 #[derive(Debug, Default)]
@@ -1290,10 +1315,46 @@ fn char_boundary_at(value: &str, character_index: usize) -> usize {
         .map_or(value.len(), |(index, _)| index)
 }
 
-fn is_remote_image_url(url: &str) -> bool {
-    let trimmed = url.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    lower.starts_with("https://") || lower.starts_with("http://") || lower.starts_with("//")
+fn resolve_image(
+    dest_url: &str,
+    options: &TypstOptions,
+    image_assets: &mut Vec<(String, Vec<u8>)>,
+    warnings: &mut Vec<String>,
+    remote_image_index: &mut usize,
+) -> Option<String> {
+    if is_remote_image_url(dest_url) {
+        if !options.allow_external {
+            warnings.push(format!("skipped remote image `{dest_url}` (--no-external)"));
+            return None;
+        }
+        match download_image(dest_url) {
+            Ok((extension, bytes)) => {
+                let name = format!("md2pdf-remote-{remote_image_index}.{extension}");
+                *remote_image_index += 1;
+                image_assets.push((name.clone(), bytes));
+                Some(name)
+            }
+            Err(error) => {
+                warnings.push(format!("skipped remote image `{dest_url}`: {error}"));
+                None
+            }
+        }
+    } else if local_image_exists(&options.source_dir, dest_url) {
+        Some(dest_url.to_owned())
+    } else {
+        warnings.push(format!("skipped missing image `{dest_url}`"));
+        None
+    }
+}
+
+fn local_image_exists(source_dir: &Path, dest_url: &str) -> bool {
+    let path = Path::new(dest_url);
+    let resolved = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        source_dir.join(path)
+    };
+    resolved.is_file()
 }
 
 fn push_inline(
@@ -1368,7 +1429,15 @@ mod tests {
             margin_mm: 17.0,
             show_header: true,
             page_break_prefixes: vec![],
+            source_dir: PathBuf::from("."),
+            allow_external: false,
         }
+    }
+
+    fn options_with_source(source_dir: PathBuf) -> TypstOptions {
+        let mut options = options();
+        options.source_dir = source_dir;
+        options
     }
 
     #[test]
@@ -1436,18 +1505,19 @@ mod tests {
 
     #[test]
     fn renders_standalone_images_as_spaced_blocks() {
-        let document = to_typst("# Image\n\n![Example](diagram.svg)", &options())
-            .expect("valid bundled highlighter");
-        assert!(
-            document
-                .source
-                .contains("#image(\"diagram.svg\", width: 90%)")
-        );
+        let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let document = to_typst(
+            "# Image\n\n![Example](test.svg)",
+            &options_with_source(source_dir),
+        )
+        .expect("valid bundled highlighter");
+        assert!(document.source.contains("#image(\"test.svg\", width: 90%)"));
         assert!(document.source.contains("above: 7pt, below: 18pt"));
+        assert!(document.warnings.is_empty());
     }
 
     #[test]
-    fn omits_remote_images_and_keeps_alt_text() {
+    fn omits_remote_images_when_external_is_denied() {
         let document = to_typst(
             "# Badges\n\n\
              [![CI](https://github.com/0xtlt/md2pdf/actions/workflows/ci.yml/badge.svg)]\
@@ -1460,27 +1530,64 @@ mod tests {
         assert!(!document.source.contains("#image(\"https://"));
         assert!(!document.source.contains("#image(\"http://"));
         assert!(!document.source.contains("#image(\"//"));
+        assert!(!document.source.contains("#image(\"md2pdf-remote-"));
         assert!(document.source.contains(
             "#link(\"https://github.com/0xtlt/md2pdf/actions/workflows/ci.yml\")[#text(\"CI\")]"
         ));
         assert!(document.source.contains("#text(\"Remote\")"));
         assert!(document.source.contains("#text(\"Badge\")"));
         assert!(document.assets.is_empty());
+        assert_eq!(document.warnings.len(), 3);
+        assert!(
+            document
+                .warnings
+                .iter()
+                .all(|warning| warning.contains("--no-external")
+                    || warning.contains("skipped remote"))
+        );
     }
 
     #[test]
-    fn keeps_local_images_after_remote_ones() {
+    fn omits_missing_local_images_with_a_warning() {
+        let document = to_typst("# Missing\n\n![Gone](does-not-exist.png)\n", &options())
+            .expect("valid bundled highlighter");
+        assert!(!document.source.contains("#image("));
+        assert!(document.source.contains("#text(\"Gone\")"));
+        assert_eq!(document.warnings.len(), 1);
+        assert!(document.warnings[0].contains("does-not-exist.png"));
+    }
+
+    #[test]
+    fn keeps_existing_local_images_after_denied_remote_ones() {
+        let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let document = to_typst(
-            "# Mixed\n\n![Remote](https://example.com/a.png)\n\n![Local](local.png)\n",
-            &options(),
+            "# Mixed\n\n![Remote](https://example.com/a.png)\n\n![Local](test.svg)\n",
+            &options_with_source(source_dir),
         )
         .expect("valid bundled highlighter");
         assert!(!document.source.contains("#image(\"https://"));
+        assert!(document.source.contains("#image(\"test.svg\", width: 90%)"));
+        assert_eq!(document.warnings.len(), 1);
+    }
+
+    #[test]
+    fn embeds_downloaded_remote_images_when_external_is_allowed() {
+        let mut options = options();
+        options.allow_external = true;
+        let document = to_typst(
+            "# Badge\n\n![CI](https://img.shields.io/badge/license-MIT-blue.svg)\n",
+            &options,
+        )
+        .expect("download remote badge");
         assert!(
-            document
-                .source
-                .contains("#image(\"local.png\", width: 90%)")
+            document.source.contains("#image(\"md2pdf-remote-0."),
+            "source: {}",
+            document.source
         );
+        assert_eq!(document.assets.len(), 1);
+        assert!(document.assets[0].0.starts_with("md2pdf-remote-0."));
+        assert!(!document.assets[0].1.is_empty());
+        assert!(document.warnings.is_empty(), "{:?}", document.warnings);
     }
 
     #[test]

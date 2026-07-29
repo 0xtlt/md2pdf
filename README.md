@@ -60,7 +60,8 @@ cat document.md | md2pdf - --output document.pdf
 | `--line-numbers` | off | Show code line numbers |
 | `--no-header` | off | Hide page header |
 | `--page-break-before PREFIX` | none | Page break before matching `##` |
-| `-q, --quiet` | off | Suppress success output |
+| `--no-external` | off | Do not download remote images |
+| `-q, --quiet` | off | Suppress success output and warnings |
 
 Run `md2pdf --help` for the full list.
 
@@ -69,7 +70,8 @@ Run `md2pdf --help` for the full list.
 - Typst PDF engine with embedded fonts
 - TextMate syntax highlighting (dark / light)
 - Mermaid diagrams from `mermaid` / `mmd` fences
-- Clickable links and local images (remote images omitted)
+- Clickable links and local images
+- Remote images downloaded by default (`--no-external` to deny)
 - A4 / Letter, portrait or landscape
 - Custom title, author, header, footer, margins, and accent
 

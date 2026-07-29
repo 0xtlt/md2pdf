@@ -25,6 +25,7 @@ typst = "0.15.0"
 typst-as-lib = "0.16.0"
 typst-layout = "0.15.0"
 typst-pdf = "0.15.0"
+ureq = { version = "2", default-features = false, features = ["tls"] }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", features = ["unprefixed_malloc_on_supported_platforms"] }

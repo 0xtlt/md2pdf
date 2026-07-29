@@ -191,7 +191,10 @@ fn rejects_invalid_mermaid_without_creating_a_pdf() {
 
     assert_eq!(result.status.code(), Some(2));
     assert!(!output.exists());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("Mermaid"));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("Mermaid"));
+    assert!(!stderr.contains("TypstSource"));
+    assert!(!stderr.contains("SourceDiagnostic"));
 }
 
 #[test]
@@ -213,5 +216,35 @@ fn converts_readme_with_remote_badge_images() {
         "stderr: {}",
         String::from_utf8_lossy(&result.stderr)
     );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(!stderr.contains("TypstSource"));
+    assert!(!stderr.contains("SourceDiagnostic"));
+    assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
+}
+
+#[test]
+fn converts_readme_without_external_downloads() {
+    let directory = tempdir().expect("temporary directory");
+    let output = directory.path().join("readme-offline.pdf");
+    let readme = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+
+    let result = binary()
+        .arg(&readme)
+        .arg("--output")
+        .arg(&output)
+        .arg("--no-external")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("md2pdf: warning:"));
+    assert!(stderr.contains("--no-external"));
+    assert!(!stderr.contains("TypstSource"));
+    assert!(!stderr.contains("SourceDiagnostic"));
     assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
 }
