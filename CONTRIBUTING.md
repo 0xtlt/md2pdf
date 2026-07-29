@@ -46,3 +46,14 @@ spacing.
 
 A bug fix should include a test that fails before the fix. Integration tests
 should invoke the real executable and use a temporary directory.
+
+## Releases
+
+Tagged versions (`v*`) run `.github/workflows/release.yml`, which builds
+platform archives, publishes a GitHub release, and updates
+[`0xtlt/homebrew-tap`](https://github.com/0xtlt/homebrew-tap).
+
+The tap update job needs a repository secret named `HOMEBREW_TAP_TOKEN`: a
+classic PAT or fine-grained token with **Contents: Read and write** on
+`0xtlt/homebrew-tap`. Without that secret the release still publishes; the tap
+step is skipped with a warning.
