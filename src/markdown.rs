@@ -790,23 +790,42 @@ fn replace_attr(tag: &str, name: &str, value: &str) -> String {
 
 /// Fit a Mermaid SVG into the printable page area without stretching.
 ///
-/// Mermaid emits CSS-pixel dimensions. Those are converted to a compact print
-/// size, then scaled down further only when they would overflow the content box.
+/// Simple diagrams stay compact near body-text scale. Large / complex diagrams
+/// may use more of the page so labels remain readable.
 fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
-    // Treat Mermaid CSS pixels as a denser print size than 96dpi screen pixels
-    // so diagrams sit closer to body-text scale.
-    const CSS_PX_TO_PT: f32 = 0.55;
+    const CSS_PX_TO_PT: f32 = 0.58;
     let (raw_width, raw_height) = svg_dimensions_pt(svg).unwrap_or((400.0, 300.0));
     let natural_width_pt = raw_width * CSS_PX_TO_PT;
     let natural_height_pt = raw_height * CSS_PX_TO_PT;
-    let (max_width_pt, max_height_pt) = mermaid_content_box_pt(options);
+    let (content_width_pt, content_height_pt) = mermaid_page_content_pt(options);
+    let complex = is_complex_mermaid(raw_width, raw_height);
+    let (max_width_pt, max_height_pt, max_upscale, max_width_mm) = if complex {
+        (
+            content_width_pt * 0.92,
+            content_height_pt * 0.72,
+            1.15,
+            165.0,
+        )
+    } else {
+        (
+            content_width_pt * 0.52,
+            content_height_pt * 0.38,
+            1.0,
+            95.0,
+        )
+    };
     let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
-        .clamp(0.35, 1.0);
-    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(40.0, 120.0)
+        .clamp(0.35, max_upscale);
+    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(40.0, max_width_mm)
 }
 
-fn mermaid_content_box_pt(options: &TypstOptions) -> (f32, f32) {
+fn is_complex_mermaid(width: f32, height: f32) -> bool {
+    let area = width * height;
+    area > 300_000.0 || width > 700.0 || height > 700.0
+}
+
+fn mermaid_page_content_pt(options: &TypstOptions) -> (f32, f32) {
     let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
     let page_width_mm = if options.landscape {
         portrait_height_mm
@@ -821,7 +840,7 @@ fn mermaid_content_box_pt(options: &TypstOptions) -> (f32, f32) {
     let header_mm = if options.show_header { 8.0 } else { 0.0 };
     let content_width_pt = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM;
     let content_height_pt = (page_height_mm - 2.0 * options.margin_mm - header_mm) * POINTS_PER_MM;
-    (content_width_pt * 0.70, content_height_pt * 0.42)
+    (content_width_pt, content_height_pt)
 }
 
 fn svg_dimensions_pt(svg: &str) -> Option<(f32, f32)> {
@@ -1178,6 +1197,18 @@ mod tests {
             (70.0..95.0).contains(&width_mm),
             "unexpected width_mm={width_mm}"
         );
+    }
+
+    #[test]
+    fn sizes_complex_mermaid_diagrams_larger() {
+        let svg = r#"<svg width="900" height="800" viewBox="0 0 900 800"></svg>"#;
+        let width_mm = mermaid_display_width_mm(svg, &options());
+        assert!(
+            (120.0..165.0).contains(&width_mm),
+            "unexpected width_mm={width_mm}"
+        );
+        assert!(is_complex_mermaid(900.0, 800.0));
+        assert!(!is_complex_mermaid(400.0, 300.0));
     }
 
     #[test]
