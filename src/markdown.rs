@@ -520,13 +520,15 @@ fn mermaid_block(
     theme: CodeTheme,
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
-    let options = RenderOptions {
+    let mut options = RenderOptions {
         theme: match theme {
             CodeTheme::Dark => Theme::dark(),
             CodeTheme::Light => Theme::mermaid_default(),
         },
         ..RenderOptions::default()
     };
+    // Typst resolves a single SVG font family; use the embedded DejaVu face.
+    options.theme.font_family = "DejaVu Sans".to_owned();
     let svg = render_with_options(source.trim(), options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
     let path = format!("md2pdf-mermaid-{index}.svg");
@@ -806,6 +808,8 @@ mod tests {
         assert_eq!(document.assets.len(), 1);
         assert_eq!(document.assets[0].0, "md2pdf-mermaid-0.svg");
         assert!(document.assets[0].1.starts_with(b"<svg"));
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+        assert!(svg.contains("font-family=\"DejaVu Sans\""));
         assert!(
             document
                 .source
