@@ -5,6 +5,8 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.2.2] - 2026-07-29
+
 ### Added
 
 - download remote Markdown images by default and embed them as virtual Typst
@@ -114,7 +116,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.1...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.2...HEAD
+[3.2.2]: https://github.com/0xtlt/md2pdf/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/0xtlt/md2pdf/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/0xtlt/md2pdf/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/0xtlt/md2pdf/compare/v3.0.1...v3.1.0
