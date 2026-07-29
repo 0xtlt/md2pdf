@@ -7,8 +7,9 @@
 ```text
 Markdown
   -> pulldown-cmark events
-    -> TextMate syntax highlighting
-    -> Mermaid fences rendered to SVG
+    -> collect Mermaid fences as structured body jobs
+    -> async spawn_blocking Mermaid render (capped Tokio pool)
+    -> Liquid TextMate highlighting (sync, reused highlighter)
     -> in-memory Typst document
     -> Typst page layout
     -> PDF serialization
@@ -17,7 +18,10 @@ Markdown
 The binary embeds the DejaVu fonts, syntax themes, and a precompiled Liquid
 TextMate grammar. General-purpose fenced code uses Typst's complete
 Syntect/two-face catalog with the native Oniguruma backend. Mermaid diagrams
-are rendered to SVG in process with a pure-Rust Mermaid engine. The target
+are rendered to SVG in process with a pure-Rust Mermaid engine. Independent
+Mermaid fences are scheduled with Tokio `spawn_blocking` on a shared runtime
+whose blocking pool is capped to the available CPU cores (2–8). Liquid stays
+synchronous so one highlighter instance can be reused. The target
 machine does not need Python, a browser, LaTeX, or the Typst executable.
 
 ## Modules

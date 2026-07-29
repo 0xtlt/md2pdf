@@ -76,11 +76,16 @@ pub fn first_title(markdown: &str) -> Option<String> {
 }
 
 /// Convert Markdown into a complete Typst source document.
+///
+/// Mermaid fences are collected during parsing and rendered asynchronously on a
+/// shared Tokio runtime via capped `spawn_blocking` workers so independent
+/// diagrams can overlap on available CPU cores. Liquid highlighting stays on the
+/// synchronous path so a single TextMate highlighter can be reused.
 pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
     let parser = Parser::new_ext(markdown, parser_options());
     let mut liquid_highlighter = None;
-    let mut body = String::new();
-    let mut assets = Vec::new();
+    let mut body = BodyBuilder::default();
+    let mut deferred = Vec::new();
     let mut paragraph: Option<InlineBuffer> = None;
     let mut heading: Option<(HeadingLevel, InlineBuffer)> = None;
     let mut code: Option<(String, String)> = None;
@@ -97,9 +102,12 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 Event::End(TagEnd::CodeBlock) => {
                     let (language, source) = code.take().expect("code buffer exists");
                     if is_mermaid_language(&language) {
-                        let (typst, asset) = mermaid_block(&source, options, assets.len())?;
-                        assets.push(asset);
-                        body.push_str(&typst);
+                        let asset_index = deferred.len();
+                        deferred.push(DeferredMermaid {
+                            source,
+                            asset_index,
+                        });
+                        body.push_job(asset_index);
                     } else {
                         body.push_str(&code_block(
                             &source,
@@ -324,10 +332,123 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         }
     }
 
-    Ok(TypstDocument {
-        source: format!("{}\n{}", template(options), body),
-        assets,
+    let rendered = render_mermaid_async(deferred, options)?;
+    let source = format!("{}\n{}", template(options), body.finish(&rendered));
+    let assets = rendered.into_iter().map(|output| output.asset).collect();
+
+    Ok(TypstDocument { source, assets })
+}
+
+#[derive(Debug, Default)]
+struct BodyBuilder {
+    segments: Vec<BodySegment>,
+}
+
+#[derive(Debug)]
+enum BodySegment {
+    Text(String),
+    Job(usize),
+}
+
+impl BodyBuilder {
+    fn push_str(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        if let Some(BodySegment::Text(existing)) = self.segments.last_mut() {
+            existing.push_str(text);
+            return;
+        }
+        self.segments.push(BodySegment::Text(text.to_owned()));
+    }
+
+    fn push(&mut self, ch: char) {
+        let mut buf = [0u8; 4];
+        self.push_str(ch.encode_utf8(&mut buf));
+    }
+
+    fn push_job(&mut self, index: usize) {
+        self.segments.push(BodySegment::Job(index));
+    }
+
+    fn finish(self, rendered: &[MermaidOutput]) -> String {
+        let mut body = String::new();
+        for segment in self.segments {
+            match segment {
+                BodySegment::Text(text) => body.push_str(&text),
+                BodySegment::Job(index) => body.push_str(&rendered[index].typst),
+            }
+        }
+        body
+    }
+}
+
+#[derive(Debug)]
+struct DeferredMermaid {
+    source: String,
+    asset_index: usize,
+}
+
+#[derive(Clone, Debug)]
+struct MermaidOutput {
+    typst: String,
+    asset: (String, Vec<u8>),
+}
+
+fn async_worker_limit() -> usize {
+    std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(4)
+        .clamp(2, 8)
+}
+
+fn async_runtime() -> &'static tokio::runtime::Runtime {
+    use std::sync::OnceLock;
+
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        let worker_threads = async_worker_limit();
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(worker_threads)
+            .max_blocking_threads(worker_threads)
+            .thread_name("md2pdf-async")
+            .build()
+            .unwrap_or_else(|error| panic!("failed to start async runtime: {error}"))
     })
+}
+
+fn render_mermaid_async(
+    jobs: Vec<DeferredMermaid>,
+    options: &TypstOptions,
+) -> Result<Vec<MermaidOutput>> {
+    if jobs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let options = options.clone();
+    async_runtime().block_on(async move {
+        let mut handles = Vec::with_capacity(jobs.len());
+        for job in jobs {
+            let options = options.clone();
+            handles.push(tokio::task::spawn_blocking(move || {
+                render_deferred_mermaid(job, &options)
+            }));
+        }
+
+        let mut outputs = Vec::with_capacity(handles.len());
+        for handle in handles {
+            let output = handle
+                .await
+                .map_err(|error| Error::Pdf(format!("async worker join failed: {error}")))?;
+            outputs.push(output?);
+        }
+        Ok(outputs)
+    })
+}
+
+fn render_deferred_mermaid(job: DeferredMermaid, options: &TypstOptions) -> Result<MermaidOutput> {
+    let (typst, asset) = mermaid_block(&job.source, options, job.asset_index)?;
+    Ok(MermaidOutput { typst, asset })
 }
 
 fn template(options: &TypstOptions) -> String {
@@ -1334,6 +1455,80 @@ mod tests {
         );
         assert!(document.source.contains("mm)"));
         assert!(!document.source.contains("lang: \"mermaid\""));
+    }
+
+    #[test]
+    fn keeps_literal_async_markers_in_user_code_untouched() {
+        let marker = "<<<MD2PDF_ASYNC_JOB_0>>>";
+        let markdown = format!(
+            "# Mixed\n\n`{marker}`\n\n```text\n{marker}\n```\n\n```mermaid\nflowchart LR\n    A --> B\n```\n"
+        );
+        let document = to_typst(&markdown, &options()).expect("render with marker text");
+        assert_eq!(document.assets.len(), 1);
+        assert!(document.source.contains(&format!("#raw(\"{marker}\")")));
+        assert!(document.source.contains(marker));
+        assert!(document.source.contains("lang: \"text\""));
+        assert!(
+            document
+                .source
+                .contains("#image(\"md2pdf-mermaid-0.svg\", width:")
+        );
+        let mermaid_pos = document
+            .source
+            .find("#image(\"md2pdf-mermaid-0.svg\"")
+            .expect("mermaid image");
+        let fenced_pos = document.source.find("lang: \"text\"").expect("text fence");
+        assert!(fenced_pos < mermaid_pos);
+    }
+
+    #[test]
+    fn preserves_mixed_mermaid_and_liquid_order_with_stable_assets() {
+        let markdown = r#"# Mixed
+
+```mermaid
+flowchart LR
+    A --> B
+```
+
+```liquid
+{% if product.available %}{{ product.title }}{% endif %}
+```
+
+```mmd
+flowchart TD
+    User --> CLI
+```
+
+```liquid
+{{ cart.total_price | money }}
+```
+"#;
+        let document = to_typst(markdown, &options()).expect("render mixed fences");
+        assert_eq!(document.assets.len(), 2);
+        assert_eq!(document.assets[0].0, "md2pdf-mermaid-0.svg");
+        assert_eq!(document.assets[1].0, "md2pdf-mermaid-1.svg");
+        assert!(document.assets[0].1.starts_with(b"<svg"));
+        assert!(document.assets[1].1.starts_with(b"<svg"));
+
+        let first_mermaid = document
+            .source
+            .find("#image(\"md2pdf-mermaid-0.svg\"")
+            .expect("first mermaid image");
+        let first_liquid = document
+            .source
+            .find("product")
+            .expect("first liquid content");
+        let second_mermaid = document
+            .source
+            .find("#image(\"md2pdf-mermaid-1.svg\"")
+            .expect("second mermaid image");
+        let second_liquid = document.source.find("cart").expect("second liquid content");
+        assert!(first_mermaid < first_liquid);
+        assert!(first_liquid < second_mermaid);
+        assert!(second_mermaid < second_liquid);
+        assert!(document.source.contains("available"));
+        assert!(document.source.contains("total_price"));
+        assert!(!document.source.contains("lang: \"liquid\""));
     }
 
     #[test]

@@ -5,6 +5,16 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- render Mermaid fences asynchronously with Tokio `spawn_blocking` on a shared,
+  CPU-capped runtime so independent diagrams can overlap across cores;
+- keep Liquid highlighting synchronous so a single TextMate highlighter is
+  reused for the whole document;
+- merge async Mermaid results through structured body segments instead of
+  string placeholders;
+- add a heavy Mermaid/Liquid benchmark fixture and sync-vs-async measurements.
+
 ### Added
 
 - added in-process Mermaid diagram support for `mermaid` and `mmd` fenced
