@@ -1,5 +1,6 @@
-use std::{fs, path::Path};
+use std::{fs, io::Cursor, path::Path};
 
+use lopdf::{Document as PdfDocument, Object, ObjectId};
 use typst_as_lib::TypstEngine;
 use typst_layout::PagedDocument;
 
@@ -15,17 +16,15 @@ const FONTS: [&[u8]; 6] = [
 ];
 const DARK_THEME: &[u8] = include_bytes!("../assets/themes/md2pdf-dark.tmTheme");
 
-/// Compile Typst source and write the resulting PDF.
+/// Compile Typst source and return the serialized PDF bytes plus page count.
 ///
 /// Relative images and other local assets are resolved from `source_dir`.
 /// Virtual `assets` (for example rendered Mermaid SVGs) are resolved in memory.
-/// The returned value is the generated page count.
-pub fn render(
+pub fn render_to_bytes(
     source: &str,
-    output: &Path,
     source_dir: &Path,
     assets: &[(String, Vec<u8>)],
-) -> Result<usize> {
+) -> Result<(Vec<u8>, usize)> {
     let mut binaries: Vec<(&str, &[u8])> = Vec::with_capacity(assets.len() + 1);
     binaries.push(("md2pdf-dark.tmTheme", DARK_THEME));
     for (name, bytes) in assets {
@@ -46,6 +45,27 @@ pub fn render(
     let page_count = document.pages().len();
     let bytes = typst_pdf::pdf(&document, &Default::default())
         .map_err(|error| Error::Pdf(humanize_typst_debug(&format!("{error:?}"))))?;
+    Ok((bytes, page_count))
+}
+
+/// Compile Typst source and write the resulting PDF.
+///
+/// Relative images and other local assets are resolved from `source_dir`.
+/// Virtual `assets` (for example rendered Mermaid SVGs) are resolved in memory.
+/// The returned value is the generated page count.
+pub fn render(
+    source: &str,
+    output: &Path,
+    source_dir: &Path,
+    assets: &[(String, Vec<u8>)],
+) -> Result<usize> {
+    let (bytes, page_count) = render_to_bytes(source, source_dir, assets)?;
+    write_bytes(output, &bytes)?;
+    Ok(page_count)
+}
+
+/// Write raw bytes to `output`, creating parent directories as needed.
+pub fn write_bytes(output: &Path, bytes: &[u8]) -> Result<()> {
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|source| Error::Write {
             path: parent.to_path_buf(),
@@ -55,8 +75,122 @@ pub fn render(
     fs::write(output, bytes).map_err(|source| Error::Write {
         path: output.to_path_buf(),
         source,
-    })?;
-    Ok(page_count)
+    })
+}
+
+/// Concatenate PDF documents in order into a single PDF.
+pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
+    use std::collections::BTreeMap;
+
+    if parts.is_empty() {
+        return Err(Error::Pdf("no PDF parts to merge".to_owned()));
+    }
+    if parts.len() == 1 {
+        return Ok(parts[0].clone());
+    }
+
+    let mut max_id = 1u32;
+    let mut documents_pages = BTreeMap::new();
+    let mut documents_objects = BTreeMap::new();
+    let mut document = PdfDocument::with_version("1.5");
+
+    for part in parts {
+        let mut doc = PdfDocument::load_mem(part)
+            .map_err(|error| Error::Pdf(format!("failed to parse PDF part: {error}")))?;
+        doc.renumber_objects_with(max_id);
+        max_id = doc.max_id + 1;
+
+        let pages = doc.get_pages();
+        let mut page_numbers: Vec<_> = pages.keys().copied().collect();
+        page_numbers.sort_unstable();
+        for page_number in page_numbers {
+            let object_id = pages[&page_number];
+            let object = doc
+                .get_object(object_id)
+                .map_err(|error| Error::Pdf(format!("failed to read PDF page: {error}")))?
+                .clone();
+            documents_pages.insert(object_id, object);
+        }
+        documents_objects.extend(doc.objects);
+    }
+
+    let mut catalog_object: Option<(ObjectId, Object)> = None;
+    let mut pages_object: Option<(ObjectId, Object)> = None;
+
+    for (object_id, object) in documents_objects {
+        match object.type_name().unwrap_or(b"") {
+            b"Catalog" => {
+                catalog_object = Some((catalog_object.map_or(object_id, |(id, _)| id), object));
+            }
+            b"Pages" => {
+                if let Ok(dictionary) = object.as_dict() {
+                    let mut dictionary = dictionary.clone();
+                    if let Some((_, ref existing)) = pages_object
+                        && let Ok(old_dictionary) = existing.as_dict()
+                    {
+                        dictionary.extend(old_dictionary);
+                    }
+                    pages_object = Some((
+                        pages_object.map_or(object_id, |(id, _)| id),
+                        Object::Dictionary(dictionary),
+                    ));
+                }
+            }
+            b"Page" | b"Outlines" | b"Outline" => {}
+            _ => {
+                document.objects.insert(object_id, object);
+            }
+        }
+    }
+
+    let (pages_id, pages_obj) = pages_object
+        .ok_or_else(|| Error::Pdf("Pages root not found while merging PDFs".to_owned()))?;
+    let (catalog_id, catalog_obj) = catalog_object
+        .ok_or_else(|| Error::Pdf("Catalog root not found while merging PDFs".to_owned()))?;
+
+    for (object_id, object) in &documents_pages {
+        if let Ok(dictionary) = object.as_dict() {
+            let mut dictionary = dictionary.clone();
+            dictionary.set("Parent", pages_id);
+            document
+                .objects
+                .insert(*object_id, Object::Dictionary(dictionary));
+        }
+    }
+
+    if let Ok(dictionary) = pages_obj.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Count", documents_pages.len() as u32);
+        dictionary.set(
+            "Kids",
+            documents_pages
+                .into_keys()
+                .map(Object::Reference)
+                .collect::<Vec<_>>(),
+        );
+        document
+            .objects
+            .insert(pages_id, Object::Dictionary(dictionary));
+    }
+
+    if let Ok(dictionary) = catalog_obj.as_dict() {
+        let mut dictionary = dictionary.clone();
+        dictionary.set("Pages", pages_id);
+        dictionary.remove(b"Outlines");
+        document
+            .objects
+            .insert(catalog_id, Object::Dictionary(dictionary));
+    }
+
+    document.trailer.set("Root", catalog_id);
+    document.max_id = document.objects.len() as u32;
+    document.renumber_objects();
+
+    let mut output = Cursor::new(Vec::new());
+    document
+        .save_to(&mut output)
+        .map_err(|error| Error::Pdf(format!("failed to serialize merged PDF: {error}")))?;
+    Ok(output.into_inner())
 }
 
 fn humanize_typst_debug(debug: &str) -> String {

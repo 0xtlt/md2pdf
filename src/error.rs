@@ -18,6 +18,30 @@ pub enum Error {
     /// No Markdown source was supplied.
     #[error("provide a Markdown source file")]
     MissingInput,
+    /// Standard input cannot be combined with batch conversion features.
+    #[error("standard input cannot be combined with directories, --grep, or multiple sources")]
+    StdinBatchUnsupported,
+    /// `--output-mode merge` or `zip` was used without `--output`.
+    #[error("--output is required for --output-mode {0}")]
+    OutputRequiredForMode(&'static str),
+    /// Per-file mode received an `--output` path that is not a directory.
+    #[error("--output must be a directory in --output-mode files: {0}")]
+    OutputMustBeDirectory(PathBuf),
+    /// No Markdown files matched the provided sources / `--grep` pattern.
+    #[error("no Markdown files matched the given sources")]
+    NoMatchingInputs,
+    /// The `--grep` pattern could not be parsed as a glob.
+    #[error("invalid --grep pattern: {0}")]
+    InvalidGrep(String),
+    /// The `--name-format` template contains an unknown placeholder.
+    #[error("invalid --name-format: {0}")]
+    InvalidNameFormat(String),
+    /// Two inputs expanded to the same output path or zip entry name.
+    #[error("name-format collision for `{0}`; include {{index}} to disambiguate")]
+    NameCollision(String),
+    /// `--jobs` was zero.
+    #[error("--jobs must be at least 1")]
+    InvalidJobs,
     /// The requested page margin is outside the supported range.
     #[error("--margin must be between 8 and 45 mm")]
     InvalidMargin,
@@ -45,6 +69,14 @@ pub enum Error {
         path: PathBuf,
         /// Underlying filesystem error.
         source: std::io::Error,
+    },
+    /// Building a zip archive failed.
+    #[error("failed to create zip archive {path}: {message}")]
+    Zip {
+        /// Archive path that could not be written.
+        path: PathBuf,
+        /// Underlying error message.
+        message: String,
     },
     /// Typst compilation or PDF serialization failed.
     #[error("PDF generation failed: {0}")]

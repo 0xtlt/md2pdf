@@ -45,11 +45,19 @@ md2pdf document.md --output build/document.pdf
 md2pdf document.md --code-theme light --accent '#2563EB'
 md2pdf document.md --page-size letter --landscape
 cat document.md | md2pdf - --output document.pdf
+md2pdf docs/ --grep '**/ADR-*.md' --output-mode merge -o adr.pdf
+md2pdf docs/ --output-mode zip -o docs.zip -j 4
+md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `-o, --output PATH` | source with `.pdf` | Output PDF path |
+| `SOURCE...` | required | Markdown files and/or directories (`-` for stdin) |
+| `-o, --output PATH` | source with `.pdf` | Output PDF, zip path, or directory for per-file mode |
+| `--grep GLOB` | `**/*.md` for directories | Path glob used when selecting files under directories |
+| `--output-mode files\|merge\|zip` | `files` | Per-file PDFs, one merged PDF, or a zip of PDFs |
+| `--name-format TEMPLATE` | `{stem}.pdf` | Per-file / zip entry names (`{stem}`, `{name}`, `{dir}`, `{index}`, `{ext}`) |
+| `-j, --jobs N` | CPU count (1–8) | Parallel file conversions |
 | `--title TEXT` | first `#` heading | PDF metadata title |
 | `--author TEXT` | empty | PDF metadata author |
 | `--page-size a4\|letter` | `a4` | Page format |
@@ -73,6 +81,7 @@ Run `md2pdf --help` for the full list.
 - Mermaid diagrams from `mermaid` / `mmd` fences
 - Clickable links and local images
 - Remote HTTPS images downloaded by default (`--no-external` to deny, `--allow-http` for cleartext HTTP)
+- Multi-file conversion: merge, zip, or per-file output with parallel jobs
 - A4 / Letter, portrait or landscape
 - Custom title, author, header, footer, margins, and accent
 

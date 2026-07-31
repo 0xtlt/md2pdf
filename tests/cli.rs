@@ -277,3 +277,133 @@ fn warns_and_skips_cleartext_http_images_by_default() {
     assert!(stderr.contains("--allow-http"));
     assert!(fs::read(output).expect("read PDF").starts_with(b"%PDF-"));
 }
+
+#[test]
+fn writes_one_pdf_per_file_with_name_format() {
+    let directory = tempdir().expect("temporary directory");
+    let a = directory.path().join("alpha.md");
+    let b = directory.path().join("beta.md");
+    let out = directory.path().join("out");
+    fs::write(&a, "# Alpha\n\nOne.\n").expect("write a");
+    fs::write(&b, "# Beta\n\nTwo.\n").expect("write b");
+    fs::create_dir_all(&out).expect("outdir");
+
+    let result = binary()
+        .arg(&a)
+        .arg(&b)
+        .args([
+            "--output-mode",
+            "files",
+            "--name-format",
+            "{stem}-{index}.pdf",
+            "--jobs",
+            "1",
+            "--output",
+        ])
+        .arg(&out)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(out.join("alpha-1.pdf").is_file());
+    assert!(out.join("beta-2.pdf").is_file());
+}
+
+#[test]
+fn greps_directory_and_merges_pdfs() {
+    let directory = tempdir().expect("temporary directory");
+    let nested = directory.path().join("docs");
+    fs::create_dir_all(&nested).expect("docs");
+    fs::write(nested.join("keep.md"), "# Keep\n\nPage one.\n").expect("keep");
+    fs::write(nested.join("skip.txt"), "ignored").expect("skip");
+    fs::write(nested.join("also.md"), "# Also\n\nPage two.\n").expect("also");
+    let output = directory.path().join("merged.pdf");
+
+    let result = binary()
+        .arg(&nested)
+        .args(["--grep", "**/*.md", "--output-mode", "merge", "--output"])
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let pdf = fs::read(&output).expect("read merged");
+    assert!(pdf.starts_with(b"%PDF-"));
+    assert!(pdf.len() > 5_000);
+}
+
+#[test]
+fn packs_pdfs_into_a_zip_archive() {
+    let directory = tempdir().expect("temporary directory");
+    let a = directory.path().join("one.md");
+    let b = directory.path().join("two.md");
+    fs::write(&a, "# One\n\nText.\n").expect("write one");
+    fs::write(&b, "# Two\n\nText.\n").expect("write two");
+    let output = directory.path().join("docs.zip");
+
+    let result = binary()
+        .arg(&a)
+        .arg(&b)
+        .args([
+            "--output-mode",
+            "zip",
+            "--name-format",
+            "{stem}.pdf",
+            "--output",
+        ])
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let bytes = fs::read(&output).expect("read zip");
+    assert_eq!(&bytes[0..2], b"PK");
+}
+
+#[test]
+fn rejects_merge_without_output() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("doc.md");
+    fs::write(&source, "# Doc\n").expect("write");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--output-mode", "merge"])
+        .output()
+        .expect("run md2pdf");
+
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("--output"));
+}
+
+#[test]
+fn rejects_empty_grep_matches() {
+    let directory = tempdir().expect("temporary directory");
+    let nested = directory.path().join("empty");
+    fs::create_dir_all(&nested).expect("dir");
+    fs::write(nested.join("note.txt"), "no markdown").expect("txt");
+
+    let result = binary()
+        .arg(&nested)
+        .args(["--grep", "**/*.md", "--quiet"])
+        .output()
+        .expect("run md2pdf");
+
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("no Markdown files"));
+}
