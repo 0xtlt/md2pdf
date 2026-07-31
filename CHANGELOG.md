@@ -5,6 +5,8 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-07-31
+
 ### Added
 
 - accept multiple Markdown files, directories, and positional globs such as
@@ -128,7 +130,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.2.2...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/0xtlt/md2pdf/compare/v3.2.2...v3.3.0
 [3.2.2]: https://github.com/0xtlt/md2pdf/compare/v3.2.1...v3.2.2
 [3.2.1]: https://github.com/0xtlt/md2pdf/compare/v3.2.0...v3.2.1
 [3.2.0]: https://github.com/0xtlt/md2pdf/compare/v3.1.0...v3.2.0

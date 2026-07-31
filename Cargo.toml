@@ -1,6 +1,6 @@
 [package]
 name = "md2pdf"
-version = "3.2.2"
+version = "3.3.0"
 edition = "2024"
 description = "Fast, standalone Markdown to PDF converter written in Rust"
 license = "MIT"
