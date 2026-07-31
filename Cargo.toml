@@ -14,8 +14,12 @@ publish = false
 
 [dependencies]
 clap = { version = "4.6.4", features = ["derive"] }
+glob = "0.3.4"
+globset = "0.4.19"
+lopdf = "0.44.0"
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 pulldown-cmark = "0.13.4"
+rayon = "1.12.0"
 shiki = { version = "0.0.7", default-features = false }
 shiki-macros = "0.0.7"
 syntect = { version = "5.3.0", default-features = false, features = ["regex-onig"] }
@@ -26,6 +30,8 @@ typst-as-lib = "0.16.0"
 typst-layout = "0.15.0"
 typst-pdf = "0.15.0"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+walkdir = "2.5.0"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tikv-jemallocator = { version = "0.6.0", features = ["unprefixed_malloc_on_supported_platforms"] }

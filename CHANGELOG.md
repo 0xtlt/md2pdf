@@ -5,6 +5,18 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- accept multiple Markdown files, directories, and positional globs such as
+  `./**/*.md` (quote the pattern so the shell does not expand it); `--grep`
+  remains an optional filter when walking directories (default `**/*.md`);
+- `--output-mode files|merge|zip` to write one PDF per file, one merged PDF, or
+  a zip archive of PDFs;
+- `--name-format` templates (`{stem}`, `{name}`, `{dir}`, `{index}`, `{ext}`) for
+  per-file and zip entry names;
+- `-j/--jobs` parallel conversion on a capped rayon pool (Mermaid still uses the
+  shared Tokio runtime via `Handle::block_on`).
+
 ## [3.2.2] - 2026-07-29
 
 ### Added

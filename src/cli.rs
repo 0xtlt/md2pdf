@@ -20,6 +20,18 @@ pub enum CodeTheme {
     Light,
 }
 
+/// How multiple Markdown inputs are packaged into output artifacts.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub enum OutputMode {
+    /// Write one PDF per input Markdown file.
+    #[default]
+    Files,
+    /// Concatenate every input into a single PDF.
+    Merge,
+    /// Pack one PDF per input into a zip archive.
+    Zip,
+}
+
 /// Parsed command-line arguments.
 #[derive(Debug, Parser)]
 #[command(
@@ -28,16 +40,33 @@ pub enum CodeTheme {
     about = "Converts Markdown into a polished PDF with syntax highlighting."
 )]
 pub struct Cli {
-    /// Markdown source, or - for standard input
-    pub source: Option<PathBuf>,
+    /// Markdown sources, directories, or globs such as `./**/*.md` (`-` for stdin)
+    #[arg(value_name = "SOURCE")]
+    pub sources: Vec<PathBuf>,
 
     /// Legacy input syntax kept for compatibility
     #[arg(short = 'i', long = "input", hide = true)]
     pub legacy_source: Option<PathBuf>,
 
-    /// Output PDF path
+    /// Output PDF path, zip path, or directory for per-file mode
     #[arg(short, long)]
     pub output: Option<PathBuf>,
+
+    /// Extra glob filter when walking directories (default: `**/*.md`)
+    #[arg(long, value_name = "GLOB")]
+    pub grep: Option<String>,
+
+    /// How to package multiple inputs
+    #[arg(long = "output-mode", value_enum, default_value_t = OutputMode::Files)]
+    pub output_mode: OutputMode,
+
+    /// Filename template for per-file and zip entry names
+    #[arg(long = "name-format", default_value = "{stem}.pdf")]
+    pub name_format: String,
+
+    /// Maximum parallel file conversions (1 forces serial)
+    #[arg(short = 'j', long = "jobs")]
+    pub jobs: Option<usize>,
 
     /// PDF metadata title
     #[arg(long)]
@@ -100,6 +129,15 @@ pub struct Cli {
     pub quiet: bool,
 }
 
+/// Default parallel job count for multi-file conversion.
+#[must_use]
+pub fn default_jobs() -> usize {
+    std::thread::available_parallelism()
+        .map(std::num::NonZero::get)
+        .unwrap_or(4)
+        .clamp(1, 8)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +159,35 @@ mod tests {
         let insecure = Cli::try_parse_from(["md2pdf", "document.md", "--allow-http"])
             .expect("valid arguments");
         assert!(insecure.allow_http);
+    }
+
+    #[test]
+    fn accepts_multi_file_batch_options() {
+        let cli = Cli::try_parse_from([
+            "md2pdf",
+            "a.md",
+            "b.md",
+            "--output-mode",
+            "merge",
+            "--grep",
+            "**/*.md",
+            "--name-format",
+            "{stem}-{index}.pdf",
+            "--jobs",
+            "2",
+            "--output",
+            "out.pdf",
+        ])
+        .expect("valid arguments");
+        assert_eq!(cli.sources.len(), 2);
+        assert_eq!(cli.output_mode, OutputMode::Merge);
+        assert_eq!(cli.grep.as_deref(), Some("**/*.md"));
+        assert_eq!(cli.name_format, "{stem}-{index}.pdf");
+        assert_eq!(cli.jobs, Some(2));
+    }
+
+    #[test]
+    fn default_jobs_are_clamped() {
+        assert!((1..=8).contains(&default_jobs()));
     }
 }

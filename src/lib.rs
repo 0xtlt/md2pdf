@@ -12,6 +12,8 @@ pub mod cli;
 pub mod error;
 /// TextMate syntax highlighting and theme resolution.
 pub mod highlight;
+/// Multi-file input discovery and name-format expansion.
+pub mod inputs;
 /// Markdown parsing and Typst source generation.
 pub mod markdown;
 /// Embedded Typst compilation and PDF serialization.

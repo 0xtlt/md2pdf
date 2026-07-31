@@ -446,9 +446,11 @@ fn async_runtime() -> &'static tokio::runtime::Runtime {
     static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
     RUNTIME.get_or_init(|| {
         let worker_threads = async_worker_limit();
+        // Extra blocking capacity for nested Mermaid work under multi-file rayon batches.
+        let blocking_threads = (worker_threads * 4).clamp(4, 32);
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(worker_threads)
-            .max_blocking_threads(worker_threads)
+            .max_blocking_threads(blocking_threads)
             .thread_name("md2pdf-async")
             .build()
             .unwrap_or_else(|error| panic!("failed to start async runtime: {error}"))
@@ -464,7 +466,8 @@ fn render_mermaid_async(
     }
 
     let options = options.clone();
-    async_runtime().block_on(async move {
+    // Prefer Handle::block_on so multiple rayon workers can drive Mermaid concurrently.
+    async_runtime().handle().block_on(async move {
         let mut handles = Vec::with_capacity(jobs.len());
         for job in jobs {
             let options = options.clone();

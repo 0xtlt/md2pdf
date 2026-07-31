@@ -29,11 +29,12 @@ machine does not need Python, a browser, LaTeX, or the Typst executable.
 | Module | Responsibility |
 | --- | --- |
 | `cli` | Command-line arguments and accepted values |
+| `inputs` | Multi-file discovery, `--grep` filtering, and name-format expansion |
 | `highlight` | Liquid TextMate grammar, themes, and Typst token conversion |
 | `markdown` | Markdown event conversion into Typst source and Mermaid assets |
-| `pdf` | Typst compilation, file resolution, and PDF writing |
+| `pdf` | Typst compilation, PDF write/merge, and file resolution |
 | `error` | Structured errors and user-facing CLI messages |
-| `main` | Validation, input handling, and orchestration |
+| `main` | Validation, batch orchestration, and parallel conversion |
 
 ## Markdown conversion
 
@@ -68,6 +69,24 @@ grammars, so nested Shopify templates are highlighted structurally.
 
 No language uses hand-written keyword matching. Unknown identifiers produce
 plain text instead of aborting PDF generation.
+
+## Multi-file batch conversion
+
+When multiple sources or directories are provided, `main` collects matching files
+via `inputs` (`walkdir` + `globset` / `glob`), converts each Markdown document on a
+capped **rayon** pool (`--jobs`), then packages results according to
+`--output-mode`:
+
+- positional globs such as `./**/*.md` are expanded by the CLI (quote them so
+  the shell leaves them intact);
+- directories are walked recursively (`--grep`, default `**/*.md`);
+- `files` — one PDF per input (optional output directory + `--name-format`);
+- `merge` — concatenate PDF page trees with `lopdf`;
+- `zip` — deflated archive of per-file PDFs.
+
+Mermaid rendering still uses the shared Tokio runtime; workers drive it with
+`Handle::block_on` so nested file-level parallelism does not call
+`Runtime::block_on` concurrently.
 
 ## Resources
 
