@@ -392,6 +392,35 @@ fn rejects_merge_without_output() {
 }
 
 #[test]
+fn expands_positional_glob_and_merges() {
+    let directory = tempdir().expect("temporary directory");
+    let nested = directory.path().join("docs");
+    fs::create_dir_all(&nested).expect("docs");
+    fs::write(nested.join("a.md"), "# A\n\nOne.\n").expect("a");
+    fs::write(nested.join("b.md"), "# B\n\nTwo.\n").expect("b");
+    fs::write(nested.join("skip.txt"), "ignored").expect("skip");
+    let output = directory.path().join("merged.pdf");
+    let pattern = directory.path().join("**").join("*.md");
+
+    let result = binary()
+        .arg(&pattern)
+        .args(["--output-mode", "merge", "--output"])
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let pdf = fs::read(&output).expect("read merged");
+    assert!(pdf.starts_with(b"%PDF-"));
+    assert!(pdf.len() > 5_000);
+}
+
+#[test]
 fn rejects_empty_grep_matches() {
     let directory = tempdir().expect("temporary directory");
     let nested = directory.path().join("empty");

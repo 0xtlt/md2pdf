@@ -1,4 +1,4 @@
-//! Discover Markdown inputs from files/directories and expand name templates.
+//! Discover Markdown inputs from files/directories/globs and expand name templates.
 
 use std::{
     collections::{BTreeSet, HashMap},
@@ -21,10 +21,12 @@ pub struct InputSource {
     pub index: usize,
 }
 
-/// Collect Markdown inputs from files and directories.
+/// Collect Markdown inputs from files, directories, and glob patterns.
 ///
-/// When any source is a directory, files are filtered with `grep` (default
-/// `**/*.md`). Explicit files are only filtered when `grep` is set.
+/// Positional arguments that do not exist on disk but contain glob metacharacters
+/// (for example `./**/*.md`) are expanded in place. When any source is a
+/// directory, files are filtered with `grep` (default `**/*.md`). Explicit files
+/// and glob matches are only filtered when `grep` is set.
 pub fn collect_sources(sources: &[PathBuf], grep: Option<&str>) -> Result<Vec<InputSource>> {
     if sources.is_empty() {
         return Err(Error::MissingInput);
@@ -37,7 +39,7 @@ pub fn collect_sources(sources: &[PathBuf], grep: Option<&str>) -> Result<Vec<In
         (None, false) => None,
     };
     let globset = grep_pattern.map(build_globset).transpose()?;
-    let filter_explicit = grep.is_some();
+    let filter_matches = grep.is_some();
 
     let mut unique = BTreeSet::new();
     for source in sources {
@@ -48,13 +50,20 @@ pub fn collect_sources(sources: &[PathBuf], grep: Option<&str>) -> Result<Vec<In
         if source.is_dir() {
             collect_from_directory(source, globset.as_ref(), &mut unique)?;
         } else if source.is_file() {
-            if filter_explicit
+            if filter_matches
                 && let Some(set) = &globset
                 && !matches_grep(source, source, set)
             {
                 continue;
             }
             unique.insert(source.clone());
+        } else if looks_like_glob(source) {
+            let extra_filter = if filter_matches {
+                globset.as_ref()
+            } else {
+                None
+            };
+            expand_glob_source(source, extra_filter, &mut unique)?;
         } else {
             return Err(Error::InputNotFound(source.clone()));
         }
@@ -72,6 +81,46 @@ pub fn collect_sources(sources: &[PathBuf], grep: Option<&str>) -> Result<Vec<In
             index: offset + 1,
         })
         .collect())
+}
+
+fn looks_like_glob(path: &Path) -> bool {
+    path.to_string_lossy()
+        .chars()
+        .any(|ch| matches!(ch, '*' | '?' | '['))
+}
+
+fn expand_glob_source(
+    pattern: &Path,
+    grep: Option<&GlobSet>,
+    unique: &mut BTreeSet<PathBuf>,
+) -> Result<()> {
+    let pattern = pattern.to_string_lossy();
+    let entries =
+        glob::glob(pattern.as_ref()).map_err(|error| Error::InvalidGrep(error.to_string()))?;
+    let mut matched = false;
+    for entry in entries {
+        let path = entry.map_err(|error| Error::Read {
+            path: PathBuf::from(pattern.as_ref()),
+            source: std::io::Error::other(error.to_string()),
+        })?;
+        if !path.is_file() {
+            continue;
+        }
+        if let Some(set) = grep {
+            let root = path.parent().unwrap_or_else(|| Path::new("."));
+            if !matches_grep(&path, root, set) {
+                continue;
+            }
+        }
+        unique.insert(path);
+        matched = true;
+    }
+    if !matched {
+        // Pattern parsed but matched nothing — surface as empty selection later
+        // unless other sources contribute files.
+        return Ok(());
+    }
+    Ok(())
 }
 
 fn collect_from_directory(
@@ -227,6 +276,22 @@ mod tests {
 
         let all_md = collect_sources(&[directory.path().to_path_buf()], None).expect("default");
         assert_eq!(all_md.len(), 2);
+    }
+
+    #[test]
+    fn expands_positional_glob_patterns() {
+        let directory = tempdir().expect("tempdir");
+        let nested = directory.path().join("nested");
+        fs::create_dir_all(&nested).unwrap();
+        let keep = nested.join("keep.md");
+        let skip = nested.join("skip.txt");
+        fs::write(&keep, "# Keep").unwrap();
+        fs::write(&skip, "nope").unwrap();
+
+        let pattern = directory.path().join("**").join("*.md");
+        let sources = collect_sources(&[pattern], None).expect("glob");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].path, keep);
     }
 
     #[test]

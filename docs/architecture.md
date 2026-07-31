@@ -73,10 +73,13 @@ plain text instead of aborting PDF generation.
 ## Multi-file batch conversion
 
 When multiple sources or directories are provided, `main` collects matching files
-via `inputs` (`walkdir` + `globset`), converts each Markdown document on a
+via `inputs` (`walkdir` + `globset` / `glob`), converts each Markdown document on a
 capped **rayon** pool (`--jobs`), then packages results according to
 `--output-mode`:
 
+- positional globs such as `./**/*.md` are expanded by the CLI (quote them so
+  the shell leaves them intact);
+- directories are walked recursively (`--grep`, default `**/*.md`);
 - `files` — one PDF per input (optional output directory + `--name-format`);
 - `merge` — concatenate PDF page trees with `lopdf`;
 - `zip` — deflated archive of per-file PDFs.

@@ -27,11 +27,11 @@ pub enum Error {
     /// Per-file mode received an `--output` path that is not a directory.
     #[error("--output must be a directory in --output-mode files: {0}")]
     OutputMustBeDirectory(PathBuf),
-    /// No Markdown files matched the provided sources / `--grep` pattern.
+    /// No Markdown files matched the provided sources / patterns.
     #[error("no Markdown files matched the given sources")]
     NoMatchingInputs,
-    /// The `--grep` pattern could not be parsed as a glob.
-    #[error("invalid --grep pattern: {0}")]
+    /// A positional or `--grep` glob pattern could not be parsed.
+    #[error("invalid glob pattern: {0}")]
     InvalidGrep(String),
     /// The `--name-format` template contains an unknown placeholder.
     #[error("invalid --name-format: {0}")]

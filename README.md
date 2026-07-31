@@ -45,16 +45,16 @@ md2pdf document.md --output build/document.pdf
 md2pdf document.md --code-theme light --accent '#2563EB'
 md2pdf document.md --page-size letter --landscape
 cat document.md | md2pdf - --output document.pdf
-md2pdf docs/ --grep '**/ADR-*.md' --output-mode merge -o adr.pdf
-md2pdf docs/ --output-mode zip -o docs.zip -j 4
+md2pdf './**/*.md' --output-mode merge -o all.pdf
+md2pdf 'docs/**/ADR-*.md' --output-mode zip -o docs.zip -j 4
 md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 ```
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `SOURCE...` | required | Markdown files and/or directories (`-` for stdin) |
+| `SOURCE...` | required | Markdown files, directories, or globs such as `./**/*.md` (`-` for stdin) |
 | `-o, --output PATH` | source with `.pdf` | Output PDF, zip path, or directory for per-file mode |
-| `--grep GLOB` | `**/*.md` for directories | Path glob used when selecting files under directories |
+| `--grep GLOB` | `**/*.md` for directories | Optional extra filter when walking directories |
 | `--output-mode files\|merge\|zip` | `files` | Per-file PDFs, one merged PDF, or a zip of PDFs |
 | `--name-format TEMPLATE` | `{stem}.pdf` | Per-file / zip entry names (`{stem}`, `{name}`, `{dir}`, `{index}`, `{ext}`) |
 | `-j, --jobs N` | CPU count (1–8) | Parallel file conversions |

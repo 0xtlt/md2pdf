@@ -955,6 +955,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glob"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
+
+[[package]]
 name = "globset"
 version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1717,6 +1723,7 @@ name = "md2pdf"
 version = "3.2.2"
 dependencies = [
  "clap",
+ "glob",
  "globset",
  "lopdf",
  "mermaid-rs-renderer",

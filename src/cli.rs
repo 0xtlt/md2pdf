@@ -40,7 +40,7 @@ pub enum OutputMode {
     about = "Converts Markdown into a polished PDF with syntax highlighting."
 )]
 pub struct Cli {
-    /// Markdown sources and/or directories (use - for standard input)
+    /// Markdown sources, directories, or globs such as `./**/*.md` (`-` for stdin)
     #[arg(value_name = "SOURCE")]
     pub sources: Vec<PathBuf>,
 
@@ -52,7 +52,7 @@ pub struct Cli {
     #[arg(short, long)]
     pub output: Option<PathBuf>,
 
-    /// Glob used to select Markdown files under directories
+    /// Extra glob filter when walking directories (default: `**/*.md`)
     #[arg(long, value_name = "GLOB")]
     pub grep: Option<String>,
 

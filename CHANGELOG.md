@@ -7,8 +7,9 @@ All notable changes are documented in this file. The format follows
 
 ### Added
 
-- accept multiple Markdown files and directories, with `--grep` path globs to
-  select inputs (default `**/*.md` when walking directories);
+- accept multiple Markdown files, directories, and positional globs such as
+  `./**/*.md` (quote the pattern so the shell does not expand it); `--grep`
+  remains an optional filter when walking directories (default `**/*.md`);
 - `--output-mode files|merge|zip` to write one PDF per file, one merged PDF, or
   a zip archive of PDFs;
 - `--name-format` templates (`{stem}`, `{name}`, `{dir}`, `{index}`, `{ext}`) for
