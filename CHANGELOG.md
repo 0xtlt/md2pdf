@@ -38,7 +38,9 @@ All notable changes are documented in this file. The format follows
 - document that Homebrew core's Go `md2pdf` collides with this formula, and
   require `brew install 0xtlt/tap/md2pdf`;
 - harden the Homebrew tap updater so formula pushes authenticate reliably and
-  warn about the core name collision in formula caveats.
+  warn about the core name collision in formula caveats;
+- ship `packaging/homebrew/md2pdf.rb` so Homebrew can install from this repo
+  even when the tap formula is missing.
 
 ## [3.2.1] - 2026-07-29
 
