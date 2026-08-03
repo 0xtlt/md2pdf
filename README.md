@@ -74,6 +74,21 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 
 Run `md2pdf --help` for the full list.
 
+## Agent skill
+
+This repository includes a lightweight Agent Skill for Codex and other
+compatible coding agents. It tells the agent to use `md2pdf` when rendering a
+Markdown document as a shareable PDF.
+
+Install it for Codex in the current project:
+
+```console
+npx skills add 0xtlt/md2pdf --skill render-markdown-pdf --agent codex
+```
+
+To install it globally instead, add `--global`. In Codex, invoke it explicitly
+with `$render-markdown-pdf`.
+
 ## Features
 
 - Typst PDF engine with embedded fonts
