@@ -13,6 +13,7 @@ use crate::{
 const POINTS_PER_MM: f32 = 2.834_646;
 const CODE_GLYPH_WIDTH_PT: f32 = 4.45;
 const CODE_LINE_HEIGHT_PT: f32 = 8.8;
+const SCHEDULE_CROP_PADDING: f32 = 2.0;
 
 /// Rendering options used to build the intermediate Typst document.
 #[derive(Clone, Debug)]
@@ -697,7 +698,11 @@ fn mermaid_block(
     let is_schedule = is_schedule_mermaid(source);
     let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
-    let crop_padding = if is_schedule { 0.0 } else { 16.0 };
+    let crop_padding = if is_schedule {
+        SCHEDULE_CROP_PADDING
+    } else {
+        16.0
+    };
     let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg, crop_padding));
     let path = format!("md2pdf-mermaid-{index}.svg");
     let width = mermaid_display_width(is_schedule, &svg, options);
@@ -1704,9 +1709,10 @@ GANTT
         let (schedule_x, _, _, _) = svg_view_box(&schedule_svg).expect("schedule viewBox");
         let (schedule_content_x, _, _, _) =
             mermaid_svg_content_bounds(&schedule_svg).expect("schedule content bounds");
+        let schedule_left_inset = schedule_content_x - schedule_x;
         assert!(
-            (schedule_content_x - schedule_x).abs() < 0.01,
-            "schedule has left padding: viewBox x={schedule_x}, content x={schedule_content_x}"
+            (0.0..=SCHEDULE_CROP_PADDING + 0.01).contains(&schedule_left_inset),
+            "schedule left inset is not paint-safe: {schedule_left_inset}"
         );
 
         assert!(
@@ -1740,9 +1746,10 @@ GANTT
         let (timeline_x, _, _, _) = svg_view_box(&timeline_svg).expect("timeline viewBox");
         let (timeline_content_x, _, _, _) =
             mermaid_svg_content_bounds(&timeline_svg).expect("timeline content bounds");
+        let timeline_left_inset = timeline_content_x - timeline_x;
         assert!(
-            (timeline_content_x - timeline_x).abs() < 0.01,
-            "timeline has left padding: viewBox x={timeline_x}, content x={timeline_content_x}"
+            (0.0..=SCHEDULE_CROP_PADDING + 0.01).contains(&timeline_left_inset),
+            "timeline left inset is not paint-safe: {timeline_left_inset}"
         );
     }
 
@@ -1863,6 +1870,27 @@ flowchart TD
             "expected tighter crop, got {width}x{height}: {cropped}"
         );
         assert!(cropped.contains("viewBox=\""));
+    }
+
+    #[test]
+    fn schedule_crop_padding_keeps_edge_strokes_inside_the_viewbox() {
+        let svg = concat!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\" ",
+            "viewBox=\"0 0 400 300\">",
+            "<rect x=\"0\" y=\"0\" width=\"400\" height=\"300\" fill=\"#FFFFFF\"/>",
+            "<line x1=\"30\" y1=\"50\" x2=\"370\" y2=\"50\" stroke=\"#333\" stroke-width=\"3\"/>",
+            "<line x1=\"30\" y1=\"250\" x2=\"370\" y2=\"250\" stroke=\"#333\" stroke-width=\"3\"/>",
+            "</svg>"
+        );
+        let cropped = crop_mermaid_svg(svg, SCHEDULE_CROP_PADDING);
+        let (view_x, _, view_width, _) = svg_view_box(&cropped).expect("viewBox");
+
+        assert!(view_x <= 28.5, "left stroke is clipped: {cropped}");
+        assert!(
+            view_x + view_width >= 371.5,
+            "right stroke is clipped: {cropped}"
+        );
+        assert!(30.0 - view_x <= SCHEDULE_CROP_PADDING + 0.01);
     }
 
     #[test]
