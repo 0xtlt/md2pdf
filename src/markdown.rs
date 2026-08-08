@@ -1139,12 +1139,28 @@ fn mermaid_display_width(source: &str, svg: &str, options: &TypstOptions) -> Str
 }
 
 fn is_schedule_mermaid(source: &str) -> bool {
-    source
-        .lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty() && !line.starts_with("%%"))
-        .and_then(|line| line.split_whitespace().next())
-        .is_some_and(|diagram| matches!(diagram, "gantt" | "timeline"))
+    let mut in_frontmatter = false;
+    for line in source.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if line == "---" {
+            in_frontmatter = !in_frontmatter;
+            continue;
+        }
+        if in_frontmatter || line.starts_with("%%") {
+            continue;
+        }
+        let header = line.to_ascii_lowercase();
+        return ["gantt", "timeline"].iter().any(|keyword| {
+            header.strip_prefix(keyword).is_some_and(|rest| {
+                rest.chars()
+                    .next()
+                    .is_none_or(|character| !character.is_ascii_alphanumeric())
+            })
+        });
+    }
+    false
 }
 
 /// Fit a Mermaid SVG into the printable page area without stretching.
@@ -1662,7 +1678,7 @@ mod tests {
             r#"# Deadline schedule
 
 ```mermaid
-gantt
+GANTT
     title Product Launch Work Schedule
     dateFormat YYYY-MM-DD
     section Planning
@@ -1684,7 +1700,7 @@ gantt
         );
 
         let timeline = to_typst(
-            "# Timeline\n\n```mermaid\n%% schedule overview\ntimeline\n    2026-08-10 : Scope freeze\n```\n",
+            "# Timeline\n\n```mermaid\n---\ntitle: Launch schedule\n---\n%% schedule overview\nTIMELINE\n    2026-08-10 : Scope freeze\n```\n",
             &options(),
         )
         .expect("render Mermaid timeline");
