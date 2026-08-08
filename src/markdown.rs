@@ -694,16 +694,20 @@ fn mermaid_block(
     render_options.theme.primary_border_color = "#7B88A8".to_owned();
     render_options.theme.line_color = "#2F3B4D".to_owned();
     render_options.theme.text_color = "#333333".to_owned();
+    let is_schedule = is_schedule_mermaid(source);
     let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
-    let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg));
+    let crop_padding = if is_schedule { 0.0 } else { 16.0 };
+    let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg, crop_padding));
     let path = format!("md2pdf-mermaid-{index}.svg");
-    let width = mermaid_display_width(source, &svg, options);
-    let typst = format!(
-        "#block(width: 100%, above: 7pt, below: 18pt)\
-         [#align(center)[#image({}, width: {width})]]\n\n",
-        typst_string(&path)
-    );
+    let width = mermaid_display_width(is_schedule, &svg, options);
+    let image = format!("#image({}, width: {width})", typst_string(&path));
+    let content = if is_schedule {
+        image
+    } else {
+        format!("#align(center)[{image}]")
+    };
+    let typst = format!("#block(width: 100%, above: 7pt, below: 18pt)[{content}]\n\n");
     Ok((typst, (path, svg.into_bytes())))
 }
 
@@ -734,7 +738,7 @@ fn force_light_mermaid_background(svg: &str) -> String {
 }
 
 /// Remove excess Mermaid canvas padding so sizing uses the drawn content.
-fn crop_mermaid_svg(svg: &str) -> String {
+fn crop_mermaid_svg(svg: &str, padding: f32) -> String {
     let Some((canvas_x, canvas_y, canvas_w, canvas_h)) = svg_view_box(svg) else {
         return svg.to_owned();
     };
@@ -744,11 +748,10 @@ fn crop_mermaid_svg(svg: &str) -> String {
     if max_x <= min_x || max_y <= min_y {
         return svg.to_owned();
     }
-    let pad = 16.0;
-    let x = min_x - pad;
-    let y = min_y - pad;
-    let width = ((max_x - min_x) + 2.0 * pad).min(canvas_w);
-    let height = ((max_y - min_y) + 2.0 * pad).min(canvas_h);
+    let x = min_x - padding;
+    let y = min_y - padding;
+    let width = ((max_x - min_x) + 2.0 * padding).min(canvas_w);
+    let height = ((max_y - min_y) + 2.0 * padding).min(canvas_h);
     // Skip crop when there is no meaningful letterbox.
     let saved_w = canvas_w - width;
     let saved_h = canvas_h - height;
@@ -919,12 +922,18 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
         let tag = &without_defs[index..index + end];
         if let (Some(x), Some(y)) = (svg_tag_number(tag, "x"), svg_tag_number(tag, "y")) {
             let font_size = svg_tag_number(tag, "font-size").unwrap_or(12.0);
+            let estimated_width = font_size * 8.0;
+            let (left, right) = match svg_tag_attr(tag, "text-anchor") {
+                Some("start") => (x, x + estimated_width),
+                Some("end") => (x - estimated_width, x),
+                _ => (x - estimated_width / 2.0, x + estimated_width / 2.0),
+            };
             include_bounds(
                 &mut min_x,
                 &mut min_y,
                 &mut max_x,
                 &mut max_y,
-                x - font_size * 4.0,
+                left,
                 y - font_size,
             );
             include_bounds(
@@ -932,7 +941,7 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
                 &mut min_y,
                 &mut max_x,
                 &mut max_y,
-                x + font_size * 4.0,
+                right,
                 y + font_size * 0.4,
             );
             found = true;
@@ -1130,8 +1139,8 @@ fn replace_attr(tag: &str, name: &str, value: &str) -> String {
     format!("{tag} {name}=\"{value}\"")
 }
 
-fn mermaid_display_width(source: &str, svg: &str, options: &TypstOptions) -> String {
-    if is_schedule_mermaid(source) {
+fn mermaid_display_width(is_schedule: bool, svg: &str, options: &TypstOptions) -> String {
+    if is_schedule {
         "100%".to_owned()
     } else {
         format!("{:.2}mm", mermaid_display_width_mm(svg, options))
@@ -1691,6 +1700,15 @@ GANTT
         )
         .expect("render Mermaid schedule");
 
+        let schedule_svg = String::from_utf8_lossy(&document.assets[0].1);
+        let (schedule_x, _, _, _) = svg_view_box(&schedule_svg).expect("schedule viewBox");
+        let (schedule_content_x, _, _, _) =
+            mermaid_svg_content_bounds(&schedule_svg).expect("schedule content bounds");
+        assert!(
+            (schedule_content_x - schedule_x).abs() < 0.01,
+            "schedule has left padding: viewBox x={schedule_x}, content x={schedule_content_x}"
+        );
+
         assert!(
             document
                 .source
@@ -1698,9 +1716,16 @@ GANTT
             "schedule source: {}",
             document.source
         );
+        assert!(
+            !document
+                .source
+                .contains("#align(center)[#image(\"md2pdf-mermaid-0.svg\", width: 100%)]"),
+            "full-width schedules must be left-aligned: {}",
+            document.source
+        );
 
         let timeline = to_typst(
-            "# Timeline\n\n```mermaid\n---\ntitle: Launch schedule\n---\n%% schedule overview\nTIMELINE\n    2026-08-10 : Scope freeze\n```\n",
+            "# Timeline\n\n```mermaid\n---\ntitle: Launch schedule\n---\n%% schedule overview\nTIMELINE\n    2026-08-10 : Scope freeze\n    2026-08-21 : Design handoff\n    2026-09-04 : Feature complete\n    2026-09-11 : QA approval\n    2026-09-18 : Production launch\n```\n",
             &options(),
         )
         .expect("render Mermaid timeline");
@@ -1710,6 +1735,14 @@ GANTT
                 .contains("#image(\"md2pdf-mermaid-0.svg\", width: 100%)"),
             "timeline source: {}",
             timeline.source
+        );
+        let timeline_svg = String::from_utf8_lossy(&timeline.assets[0].1);
+        let (timeline_x, _, _, _) = svg_view_box(&timeline_svg).expect("timeline viewBox");
+        let (timeline_content_x, _, _, _) =
+            mermaid_svg_content_bounds(&timeline_svg).expect("timeline content bounds");
+        assert!(
+            (timeline_content_x - timeline_x).abs() < 0.01,
+            "timeline has left padding: viewBox x={timeline_x}, content x={timeline_content_x}"
         );
     }
 
@@ -1823,7 +1856,7 @@ flowchart TD
              fill=\"#EAEAEA\" stroke=\"#666666\"/>\
              <rect x=\"200.00\" y=\"179.00\" width=\"150.00\" height=\"65.00\" rx=\"3\" ry=\"3\" \
              fill=\"#EAEAEA\" stroke=\"#666666\"/></svg>";
-        let cropped = crop_mermaid_svg(svg);
+        let cropped = crop_mermaid_svg(svg, 16.0);
         let (width, height) = svg_dimensions_pt(&cropped).expect("dimensions");
         assert!(
             width < 400.0 && height < 280.0,
@@ -1876,7 +1909,7 @@ flowchart TD
             "<rect x=\"60\" y=\"220\" width=\"80\" height=\"40\" rx=\"3\" ry=\"3\" fill=\"#EAEAEA\"/>",
             "</svg>"
         );
-        let cropped = crop_mermaid_svg(svg);
+        let cropped = crop_mermaid_svg(svg, 16.0);
         let (vx, vy, vw, vh) = svg_view_box(&cropped).expect("viewBox");
         assert!(vw < 400.0 && vh < 400.0, "expected crop, got {vw}x{vh}");
         for (x, y) in [(100.0, 20.0), (180.0, 100.0), (100.0, 180.0), (20.0, 100.0)] {

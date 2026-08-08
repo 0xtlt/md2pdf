@@ -44,8 +44,8 @@ clear error. No browser or Node.js runtime is required.
 
 Supported diagram families include flowcharts, sequence, class, state, ER, pie,
 XY, quadrant, gantt, timeline, journey, mindmap, and git graphs, subject to the
-embedded renderer. Gantt and timeline schedules use the full printable width so
-their dates and labels remain readable.
+embedded renderer. Gantt and timeline schedules are left-aligned and use the
+full printable width so their dates and labels remain readable.
 
 ## Images
 
