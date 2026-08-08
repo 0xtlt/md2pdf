@@ -698,10 +698,10 @@ fn mermaid_block(
         .map_err(|error| Error::Mermaid(error.to_string()))?;
     let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg));
     let path = format!("md2pdf-mermaid-{index}.svg");
-    let width_mm = mermaid_display_width_mm(&svg, options);
+    let width = mermaid_display_width(source, &svg, options);
     let typst = format!(
         "#block(width: 100%, above: 7pt, below: 18pt)\
-         [#align(center)[#image({}, width: {width_mm:.2}mm)]]\n\n",
+         [#align(center)[#image({}, width: {width})]]\n\n",
         typst_string(&path)
     );
     Ok((typst, (path, svg.into_bytes())))
@@ -1128,6 +1128,23 @@ fn replace_attr(tag: &str, name: &str, value: &str) -> String {
         }
     }
     format!("{tag} {name}=\"{value}\"")
+}
+
+fn mermaid_display_width(source: &str, svg: &str, options: &TypstOptions) -> String {
+    if is_schedule_mermaid(source) {
+        "100%".to_owned()
+    } else {
+        format!("{:.2}mm", mermaid_display_width_mm(svg, options))
+    }
+}
+
+fn is_schedule_mermaid(source: &str) -> bool {
+    source
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty() && !line.starts_with("%%"))
+        .and_then(|line| line.split_whitespace().next())
+        .is_some_and(|diagram| matches!(diagram, "gantt" | "timeline"))
 }
 
 /// Fit a Mermaid SVG into the printable page area without stretching.
@@ -1637,6 +1654,47 @@ mod tests {
         );
         assert!(document.source.contains("mm)"));
         assert!(!document.source.contains("lang: \"mermaid\""));
+    }
+
+    #[test]
+    fn renders_mermaid_schedules_at_full_content_width() {
+        let document = to_typst(
+            r#"# Deadline schedule
+
+```mermaid
+gantt
+    title Product Launch Work Schedule
+    dateFormat YYYY-MM-DD
+    section Planning
+    Scope freeze :milestone, scope, 2026-08-10, 0d
+    section Delivery
+    Production launch :milestone, launch, 2026-09-18, 0d
+```
+"#,
+            &options(),
+        )
+        .expect("render Mermaid schedule");
+
+        assert!(
+            document
+                .source
+                .contains("#image(\"md2pdf-mermaid-0.svg\", width: 100%)"),
+            "schedule source: {}",
+            document.source
+        );
+
+        let timeline = to_typst(
+            "# Timeline\n\n```mermaid\n%% schedule overview\ntimeline\n    2026-08-10 : Scope freeze\n```\n",
+            &options(),
+        )
+        .expect("render Mermaid timeline");
+        assert!(
+            timeline
+                .source
+                .contains("#image(\"md2pdf-mermaid-0.svg\", width: 100%)"),
+            "timeline source: {}",
+            timeline.source
+        );
     }
 
     #[test]
