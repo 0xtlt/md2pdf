@@ -229,7 +229,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 body.push_str(
                     "#block(width: 100%, above: 6pt, below: 14pt, \
                      fill: callout-fill, inset: 9pt, \
-                     stroke: (left: 3pt + accent))[\n",
+                     stroke: callout-stroke)[\n",
                 );
             }
             Event::End(TagEnd::BlockQuote(_)) => {
@@ -581,6 +581,7 @@ fn document_template(options: &TypstOptions) -> String {
 #let muted = rgb("#667085")
 #let border = rgb("#D0D5DD")
 #let callout-fill = rgb("#FFF5F2")
+#let callout-stroke = (left: 3pt + accent)
 #let success-fill = rgb("#EAF7F1")
 #let success-accent = rgb("#237A57")
 #let table-header = ink
@@ -740,6 +741,7 @@ fn slides_template(options: &TypstOptions) -> String {
 #let cover-muted = rgb("{cover_muted}")
 #let border = rgb("{border}")
 #let callout-fill = rgb("{callout_fill}")
+#let callout-stroke = none
 #let success-fill = rgb("{success_fill}")
 #let success-accent = rgb("{success_accent}")
 #let table-header = rgb("{table_header}")
@@ -1859,6 +1861,7 @@ mod tests {
                 .contains("display(\"1\") / #counter(page).final().first()")
         );
         assert!(document.source.contains("columns: (1fr, 1fr)"));
+        assert!(document.source.contains("#let callout-stroke = none"));
         assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
         assert_eq!(document.expected_pages, Some(2));
