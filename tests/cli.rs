@@ -114,6 +114,53 @@ fn renders_every_builtin_slide_template() {
 }
 
 #[test]
+fn keeps_slide_images_within_large_margins() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("image-deck.md");
+    let image = directory.path().join("test.svg");
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("test.svg"),
+        &image,
+    )
+    .expect("copy image fixture");
+    fs::write(
+        &source,
+        "# Image deck\n\nCover.\n\n---\n\n## Diagram\n\n![Test](test.svg)\n",
+    )
+    .expect("write slide deck");
+
+    for margin in [35, 40, 45] {
+        let output = directory.path().join(format!("margin-{margin}.pdf"));
+        let result = binary()
+            .arg(&source)
+            .arg("--slides")
+            .arg("--margin")
+            .arg(margin.to_string())
+            .arg("--output")
+            .arg(&output)
+            .output()
+            .expect("render image slide");
+
+        assert!(
+            result.status.success(),
+            "margin={margin}, stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            PdfDocument::load(output)
+                .expect("load image slide PDF")
+                .get_pages()
+                .len(),
+            2,
+            "margin={margin}"
+        );
+    }
+}
+
+#[test]
 fn warns_when_a_markdown_slide_overflows_onto_extra_pages() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("overflow.md");

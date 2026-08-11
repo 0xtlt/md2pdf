@@ -74,8 +74,9 @@ above the main level-two slide heading:
 - Each `---` horizontal rule starts the next slide.
 - Headings, lists, tables, code, images, links, and Mermaid diagrams use the
   existing Markdown renderer with presentation-sized layout.
-- Standalone images are constrained to the slide area without stretching.
-- Document headers are omitted; slide decks use a discreet page number.
+- Standalone images are constrained to the available slide area without
+  stretching, including when `--margin` is increased.
+- Document headers are omitted; slide decks use a discreet physical page count.
 - `--accent`, `--margin`, `--code-theme`, and `--line-numbers` still apply.
 - `--page-size`, `--landscape`, and `--page-break-before` cannot be combined
   with `--slides`, because the slide size and boundaries are fixed.

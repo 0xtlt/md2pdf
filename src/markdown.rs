@@ -19,6 +19,8 @@ const DOCUMENT_CODE_LINE_HEIGHT_PT: f32 = 8.8;
 const SLIDE_CODE_LINE_HEIGHT_PT: f32 = 11.5;
 const SLIDE_WIDTH_MM: f32 = 338.666_66;
 const SLIDE_HEIGHT_MM: f32 = 190.5;
+const SLIDE_IMAGE_MAX_HEIGHT_MM: f32 = 105.0;
+const SLIDE_IMAGE_RESERVED_HEIGHT_MM: f32 = 45.0;
 const SCHEDULE_CROP_PADDING: f32 = 2.0;
 
 /// High-level layout selected for the generated PDF.
@@ -409,11 +411,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         body.push_str("]\n");
     }
     let rendered = render_mermaid_async(deferred, options)?;
-    let source = format!(
-        "{}\n{}",
-        template(options, expected_pages),
-        body.finish(&rendered)
-    );
+    let source = format!("{}\n{}", template(options), body.finish(&rendered));
     let mut assets = image_assets;
     assets.extend(rendered.into_iter().map(|output| output.asset));
 
@@ -540,10 +538,10 @@ fn render_deferred_mermaid(job: DeferredMermaid, options: &TypstOptions) -> Resu
     Ok(MermaidOutput { typst, asset })
 }
 
-fn template(options: &TypstOptions, expected_pages: Option<usize>) -> String {
+fn template(options: &TypstOptions) -> String {
     match options.render_mode {
         RenderMode::Document => document_template(options),
-        RenderMode::Slides => slides_template(options, expected_pages.unwrap_or(1)),
+        RenderMode::Slides => slides_template(options),
     }
 }
 
@@ -724,7 +722,7 @@ fn slide_palette(template: SlideTemplate) -> SlidePalette {
     }
 }
 
-fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
+fn slides_template(options: &TypstOptions) -> String {
     let palette = slide_palette(options.slide_template);
     let (code_fill, code_text) = code_palette(options.code_theme);
     let raw_theme = match options.code_theme {
@@ -756,12 +754,13 @@ fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
   height: 7.5in,
   margin: {margin}mm,
   fill: canvas,
+  background: align(right)[#rect(width: 4pt, height: 100%, fill: accent)],
   footer: context [
     #set text(
       size: 8.5pt,
       fill: if counter(page).get().first() == 1 {{ cover-muted }} else {{ muted }},
     )
-    #align(right)[#counter(page).display("1") / {expected_pages}]
+    #align(right)[#counter(page).display("1") / #counter(page).final().first()]
   ],
 )
 #set text(font: "DejaVu Sans", size: 17pt, fill: ink)
@@ -794,21 +793,8 @@ fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
 ]
 #show link: it => text(fill: link-color, it)
 
-#let accent-rail() = place(
-  top + right,
-  dx: {margin}mm,
-  dy: -{margin}mm,
-  rect(width: 4pt, height: 7.5in, fill: accent),
-)
-
 #let slide-cover(body) = [
-  #place(
-    top + left,
-    dx: -{margin}mm,
-    dy: -{margin}mm,
-    rect(width: 13.333333in, height: 7.5in, fill: cover-canvas),
-  )
-  #accent-rail()
+  #set page(fill: cover-canvas)
   #set text(size: 20pt, fill: cover-muted)
   #show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
     #text(size: 52pt, weight: "bold", fill: cover-ink)[#it.body]
@@ -819,7 +805,6 @@ fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
 ]
 
 #let slide-content(body) = [
-  #accent-rail()
   #block(width: 100%, breakable: true)[#body]
 ]
 
@@ -848,7 +833,6 @@ fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
         code_text = code_text,
         code_font_size = SLIDE_CODE_FONT_SIZE_PT,
         raw_theme = raw_theme,
-        expected_pages = expected_pages,
     )
 }
 
@@ -1692,10 +1676,15 @@ fn resolve_image(
 fn render_standalone_image(image_path: &str, options: &TypstOptions) -> String {
     let image = match options.render_mode {
         RenderMode::Document => format!("#image({}, width: 90%)", typst_string(image_path)),
-        RenderMode::Slides => format!(
-            "#image({}, width: 90%, height: 105mm, fit: \"contain\")",
-            typst_string(image_path)
-        ),
+        RenderMode::Slides => {
+            let available_height =
+                (SLIDE_HEIGHT_MM - 2.0 * options.margin_mm - SLIDE_IMAGE_RESERVED_HEIGHT_MM)
+                    .min(SLIDE_IMAGE_MAX_HEIGHT_MM);
+            format!(
+                "#image({}, width: 90%, height: {available_height}mm, fit: \"contain\")",
+                typst_string(image_path)
+            )
+        }
     };
     format!("#block(width: 100%, above: 7pt, below: 18pt)[#align(center)[{image}]]\n\n")
 }
@@ -1863,8 +1852,12 @@ mod tests {
         );
         assert!(document.source.contains("#slide-cover["));
         assert!(document.source.contains("#slide-content["));
-        assert!(document.source.contains("height: 7.5in, fill: accent"));
-        assert!(document.source.contains("display(\"1\") / 2"));
+        assert!(document.source.contains("height: 100%, fill: accent"));
+        assert!(
+            document
+                .source
+                .contains("display(\"1\") / #counter(page).final().first()")
+        );
         assert!(document.source.contains("columns: (1fr, 1fr)"));
         assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
@@ -1945,12 +1938,19 @@ mod tests {
         let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let document = to_typst(
             "# Image\n\n![Example](test.svg)",
-            &options_with_source(source_dir),
+            &options_with_source(source_dir.clone()),
         )
         .expect("valid bundled highlighter");
         assert!(document.source.contains("#image(\"test.svg\", width: 90%)"));
         assert!(document.source.contains("above: 7pt, below: 18pt"));
         assert!(document.warnings.is_empty());
+
+        let mut slide_options = options_with_source(source_dir);
+        slide_options.render_mode = RenderMode::Slides;
+        slide_options.margin_mm = 45.0;
+        let slides = to_typst("# Image\n\n![Example](test.svg)", &slide_options)
+            .expect("render margin-aware slide image");
+        assert!(slides.source.contains("height: 55.5mm"));
     }
 
     #[test]
