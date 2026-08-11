@@ -11,9 +11,25 @@ use crate::{
 };
 
 const POINTS_PER_MM: f32 = 2.834_646;
-const CODE_GLYPH_WIDTH_PT: f32 = 4.45;
-const CODE_LINE_HEIGHT_PT: f32 = 8.8;
+const DOCUMENT_CODE_FONT_SIZE_PT: f32 = 7.3;
+const SLIDE_CODE_FONT_SIZE_PT: f32 = 9.5;
+const DOCUMENT_CODE_GLYPH_WIDTH_PT: f32 = 4.45;
+const SLIDE_CODE_GLYPH_WIDTH_PT: f32 = 5.8;
+const DOCUMENT_CODE_LINE_HEIGHT_PT: f32 = 8.8;
+const SLIDE_CODE_LINE_HEIGHT_PT: f32 = 11.5;
+const SLIDE_WIDTH_MM: f32 = 338.666_66;
+const SLIDE_HEIGHT_MM: f32 = 190.5;
 const SCHEDULE_CROP_PADDING: f32 = 2.0;
+
+/// High-level layout selected for the generated PDF.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderMode {
+    /// Flowing A4 or US Letter technical document.
+    #[default]
+    Document,
+    /// Fixed-size 16:9 pages separated by Markdown horizontal rules.
+    Slides,
+}
 
 /// Rendering options used to build the intermediate Typst document.
 #[derive(Clone, Debug)]
@@ -36,6 +52,8 @@ pub struct TypstOptions {
     pub page_size: PageSize,
     /// Whether pages are rendered in landscape orientation.
     pub landscape: bool,
+    /// High-level document or slide layout.
+    pub render_mode: RenderMode,
     /// Page margin in millimetres.
     pub margin_mm: f32,
     /// Whether to render the page header.
@@ -59,6 +77,8 @@ pub struct TypstDocument {
     pub assets: Vec<(String, Vec<u8>)>,
     /// Non-fatal issues such as skipped or failed images.
     pub warnings: Vec<String>,
+    /// Markdown slide count used to detect content overflowing onto extra pages.
+    pub expected_pages: Option<usize>,
 }
 
 #[derive(Default)]
@@ -94,6 +114,12 @@ pub fn first_title(markdown: &str) -> Option<String> {
 /// diagrams can overlap on available CPU cores. Liquid highlighting stays on the
 /// synchronous path so a single TextMate highlighter can be reused.
 pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
+    let expected_pages = (options.render_mode == RenderMode::Slides).then(|| {
+        Parser::new_ext(markdown, parser_options())
+            .filter(|event| matches!(event, Event::Rule))
+            .count()
+            + 1
+    });
     let parser = Parser::new_ext(markdown, parser_options());
     let mut liquid_highlighter = None;
     let mut body = BodyBuilder::default();
@@ -128,8 +154,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                         body.push_str(&code_block(
                             &source,
                             &language,
-                            max_code_columns(options),
-                            max_code_lines(options),
+                            code_layout(options),
                             options.line_numbers,
                             options.code_theme,
                             &mut liquid_highlighter,
@@ -273,11 +298,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                             .is_some_and(|buffer| buffer.typst.is_empty());
                         if standalone_image {
                             paragraph.take();
-                            body.push_str(&format!(
-                                "#block(width: 100%, above: 7pt, below: 18pt)\
-                                 [#align(center)[#image({}, width: 90%)]]\n\n",
-                                typst_string(&image_path)
-                            ));
+                            body.push_str(&render_standalone_image(&image_path, options));
                         } else {
                             push_inline(
                                 &mut paragraph,
@@ -329,6 +350,9 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
             }
             Event::SoftBreak => push_inline(&mut paragraph, &mut heading, " ", " "),
             Event::HardBreak => push_inline(&mut paragraph, &mut heading, "\\\n", "\n"),
+            Event::Rule if options.render_mode == RenderMode::Slides => {
+                body.push_str("#pagebreak(weak: true)\n")
+            }
             Event::Rule => body.push_str(
                 "#block(width: 100%, above: 14pt, below: 14pt)\
                  [#line(length: 100%, stroke: 0.5pt + border)]\n\n",
@@ -375,6 +399,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         source,
         assets,
         warnings,
+        expected_pages,
     })
 }
 
@@ -494,6 +519,13 @@ fn render_deferred_mermaid(job: DeferredMermaid, options: &TypstOptions) -> Resu
 }
 
 fn template(options: &TypstOptions) -> String {
+    match options.render_mode {
+        RenderMode::Document => document_template(options),
+        RenderMode::Slides => slides_template(options),
+    }
+}
+
+fn document_template(options: &TypstOptions) -> String {
     let paper = match options.page_size {
         PageSize::A4 => "a4",
         PageSize::Letter => "us-letter",
@@ -583,17 +615,74 @@ fn template(options: &TypstOptions) -> String {
     )
 }
 
+fn slides_template(options: &TypstOptions) -> String {
+    let (code_fill, code_text) = code_palette(options.code_theme);
+    let raw_theme = match options.code_theme {
+        CodeTheme::Dark => "#set raw(theme: \"md2pdf-dark.tmTheme\")",
+        CodeTheme::Light => "",
+    };
+    format!(
+        r##"#let accent = rgb("{accent}")
+#let ink = rgb("#17202A")
+#let muted = rgb("#667085")
+#let border = rgb("#D0D5DD")
+
+#set document(title: {title}, author: ({author},))
+#set page(
+  width: 13.333333in,
+  height: 7.5in,
+  margin: {margin}mm,
+)
+#set text(font: "DejaVu Sans", size: 16pt, fill: ink)
+#set par(leading: 0.66em, spacing: 0.75em, justify: false)
+#set heading(numbering: none)
+#show heading.where(level: 1): it => block(width: 100%, above: 34pt, below: 22pt)[
+  #align(center)[#text(size: 34pt, weight: "bold", fill: ink)[#it.body]]
+]
+#show heading.where(level: 2): it => block(above: 4pt, below: 18pt)[
+  #text(size: 28pt, weight: "bold", fill: accent)[#it.body]
+]
+#show heading.where(level: 3): it => block(above: 10pt, below: 10pt)[
+  #text(size: 20pt, weight: "bold", fill: accent)[#it.body]
+]
+#show heading.where(level: 4): set text(size: 17pt, weight: "bold", fill: accent)
+#show heading.where(level: 5): set text(size: 16pt, weight: "bold", fill: accent)
+#show heading.where(level: 6): set text(size: 15pt, weight: "bold", fill: accent)
+{raw_theme}
+#show raw.where(block: true): it => block(
+  width: 100%,
+  fill: rgb("{code_fill}"),
+  inset: 10pt,
+  radius: 3pt,
+  breakable: false,
+)[
+  #set text(font: "DejaVu Sans Mono", size: {code_font_size}pt, fill: rgb("{code_text}"))
+  #it
+]
+#show link: it => text(fill: rgb("#0969DA"), it)
+
+"##,
+        accent = options.accent,
+        title = typst_string(&options.title),
+        author = typst_string(&options.author),
+        margin = options.margin_mm,
+        code_fill = code_fill,
+        code_text = code_text,
+        code_font_size = SLIDE_CODE_FONT_SIZE_PT,
+        raw_theme = raw_theme,
+    )
+}
+
 fn code_block(
     source: &str,
     language: &str,
-    max_columns: usize,
-    max_lines: usize,
+    layout: CodeLayout,
     line_numbers: bool,
     theme: CodeTheme,
     liquid_highlighter: &mut Option<SyntaxHighlighter>,
 ) -> Result<String> {
     let language = normalize_fence_language(language);
-    let mut source = wrap_code(source.trim_end_matches('\n'), max_columns);
+    let mut source = wrap_code(source.trim_end_matches('\n'), layout.max_columns);
     if line_numbers {
         source = source
             .lines()
@@ -607,7 +696,7 @@ fn code_block(
         vec![String::new()]
     } else {
         lines
-            .chunks(max_lines)
+            .chunks(layout.max_lines)
             .map(|chunk| chunk.join("\n"))
             .collect()
     };
@@ -622,7 +711,7 @@ fn code_block(
                 None => liquid_highlighter.insert(SyntaxHighlighter::new(theme)?),
             };
             let lines = highlighter.highlight(chunk, "liquid")?;
-            output.push_str(&highlighted_code_frame(&lines, theme));
+            output.push_str(&highlighted_code_frame(&lines, theme, layout.font_size));
         } else {
             output.push_str(&format!(
                 "#raw(block: true, lang: {}, {})\n",
@@ -635,12 +724,12 @@ fn code_block(
     Ok(output)
 }
 
-fn highlighted_code_frame(lines: &[Vec<StyledToken>], theme: CodeTheme) -> String {
+fn highlighted_code_frame(lines: &[Vec<StyledToken>], theme: CodeTheme, font_size: f32) -> String {
     let (fill, foreground) = code_palette(theme);
     let mut output = format!(
         "#block(width: 100%, fill: rgb(\"{fill}\"), inset: 9pt, \
          radius: 2pt, breakable: false)[\n\
-         #set text(font: \"DejaVu Sans Mono\", size: 7.3pt, \
+         #set text(font: \"DejaVu Sans Mono\", size: {font_size}pt, \
          fill: rgb(\"{foreground}\"))\n\
          #set par(leading: 0.2em, spacing: 0pt)\n"
     );
@@ -1210,18 +1299,12 @@ fn is_complex_mermaid(width: f32, height: f32) -> bool {
 }
 
 fn mermaid_page_content_pt(options: &TypstOptions) -> (f32, f32) {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_width_mm = if options.landscape {
-        portrait_height_mm
+    let (page_width_mm, page_height_mm) = output_dimensions_mm(options);
+    let header_mm = if options.render_mode == RenderMode::Document && options.show_header {
+        8.0
     } else {
-        portrait_width_mm
+        0.0
     };
-    let page_height_mm = if options.landscape {
-        portrait_width_mm
-    } else {
-        portrait_height_mm
-    };
-    let header_mm = if options.show_header { 8.0 } else { 0.0 };
     let content_width_pt = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM;
     let content_height_pt = (page_height_mm - 2.0 * options.margin_mm - header_mm) * POINTS_PER_MM;
     (content_width_pt, content_height_pt)
@@ -1292,32 +1375,60 @@ fn styled_token(token: &StyledToken) -> String {
     format!("#text({})[{body}]", properties.join(", "))
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CodeLayout {
+    max_columns: usize,
+    max_lines: usize,
+    font_size: f32,
+}
+
+fn code_layout(options: &TypstOptions) -> CodeLayout {
+    CodeLayout {
+        max_columns: max_code_columns(options),
+        max_lines: max_code_lines(options),
+        font_size: code_font_size(options),
+    }
+}
+
 fn max_code_columns(options: &TypstOptions) -> usize {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_width_mm = if options.landscape {
-        portrait_height_mm
-    } else {
-        portrait_width_mm
+    let (page_width_mm, _) = output_dimensions_mm(options);
+    let glyph_width = match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_GLYPH_WIDTH_PT,
+        RenderMode::Slides => SLIDE_CODE_GLYPH_WIDTH_PT,
     };
     let usable_points = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM
         - 18.0
         - if options.line_numbers { 27.0 } else { 0.0 };
-    (usable_points / CODE_GLYPH_WIDTH_PT)
-        .floor()
-        .clamp(40.0, 180.0) as usize
+    (usable_points / glyph_width).floor().clamp(40.0, 180.0) as usize
 }
 
 fn max_code_lines(options: &TypstOptions) -> usize {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_height_mm = if options.landscape {
-        portrait_width_mm
-    } else {
-        portrait_height_mm
+    let (_, page_height_mm) = output_dimensions_mm(options);
+    let line_height = match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_LINE_HEIGHT_PT,
+        RenderMode::Slides => SLIDE_CODE_LINE_HEIGHT_PT,
     };
     let usable_points = (page_height_mm - 2.0 * options.margin_mm) * POINTS_PER_MM - 32.0;
-    (usable_points / CODE_LINE_HEIGHT_PT)
-        .floor()
-        .clamp(18.0, 55.0) as usize
+    (usable_points / line_height).floor().clamp(18.0, 55.0) as usize
+}
+
+fn code_font_size(options: &TypstOptions) -> f32 {
+    match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_FONT_SIZE_PT,
+        RenderMode::Slides => SLIDE_CODE_FONT_SIZE_PT,
+    }
+}
+
+fn output_dimensions_mm(options: &TypstOptions) -> (f32, f32) {
+    if options.render_mode == RenderMode::Slides {
+        return (SLIDE_WIDTH_MM, SLIDE_HEIGHT_MM);
+    }
+    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
+    if options.landscape {
+        (portrait_height_mm, portrait_width_mm)
+    } else {
+        (portrait_width_mm, portrait_height_mm)
+    }
 }
 
 fn page_dimensions_mm(page_size: PageSize) -> (f32, f32) {
@@ -1399,6 +1510,17 @@ fn resolve_image(
     }
 }
 
+fn render_standalone_image(image_path: &str, options: &TypstOptions) -> String {
+    let image = match options.render_mode {
+        RenderMode::Document => format!("#image({}, width: 90%)", typst_string(image_path)),
+        RenderMode::Slides => format!(
+            "#image({}, width: 90%, height: 105mm, fit: \"contain\")",
+            typst_string(image_path)
+        ),
+    };
+    format!("#block(width: 100%, above: 7pt, below: 18pt)[#align(center)[{image}]]\n\n")
+}
+
 fn local_image_exists(source_dir: &Path, dest_url: &str) -> bool {
     let path = Path::new(dest_url);
     let resolved = if path.is_absolute() {
@@ -1478,6 +1600,7 @@ mod tests {
             footer: "Test".into(),
             page_size: PageSize::A4,
             landscape: false,
+            render_mode: RenderMode::Document,
             margin_mm: 17.0,
             show_header: true,
             page_break_prefixes: vec![],
@@ -1517,6 +1640,39 @@ mod tests {
     }
 
     #[test]
+    fn slide_mode_uses_widescreen_pages_and_horizontal_rule_breaks() {
+        let mut options = options();
+        options.render_mode = RenderMode::Slides;
+        let document = to_typst(
+            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n",
+            &options,
+        )
+        .expect("render slides");
+
+        assert!(document.source.contains("width: 13.333333in"));
+        assert!(document.source.contains("height: 7.5in"));
+        assert!(
+            document
+                .source
+                .contains("#set text(font: \"DejaVu Sans\", size: 16pt")
+        );
+        assert!(document.source.contains("#pagebreak(weak: true)"));
+        assert!(!document.source.contains("paper: \"a4\""));
+        assert_eq!(document.expected_pages, Some(2));
+    }
+
+    #[test]
+    fn document_mode_keeps_horizontal_rules_and_a4_layout() {
+        let document =
+            to_typst("# Document\n\n---\n\nBody.\n", &options()).expect("render document");
+
+        assert!(document.source.contains("paper: \"a4\""));
+        assert!(document.source.contains("stroke: 0.5pt + border"));
+        assert!(!document.source.contains("#pagebreak(weak: true)"));
+        assert_eq!(document.expected_pages, None);
+    }
+
+    #[test]
     fn wraps_long_code_without_splitting_unicode() {
         let wrapped = wrap_code(
             "let cafe = \"a line that is far too long to fit inside the code column\";",
@@ -1537,8 +1693,11 @@ mod tests {
         let typst = code_block(
             &code,
             "rust",
-            100,
-            50,
+            CodeLayout {
+                max_columns: 100,
+                max_lines: 50,
+                font_size: DOCUMENT_CODE_FONT_SIZE_PT,
+            },
             true,
             CodeTheme::Dark,
             &mut highlighter,

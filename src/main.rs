@@ -11,7 +11,7 @@ use md2pdf::{
     cli::{Cli, OutputMode, default_jobs},
     error::Error,
     inputs::{self, InputSource},
-    markdown::{TypstOptions, first_title, to_typst},
+    markdown::{RenderMode, TypstOptions, first_title, to_typst},
     pdf,
 };
 use rayon::prelude::*;
@@ -158,6 +158,11 @@ fn convert_one(cli: &Cli, source: &InputSource, entry_name: String) -> Result<Co
             footer: cli.footer.clone().unwrap_or_else(|| title.clone()),
             page_size: cli.page_size,
             landscape: cli.landscape,
+            render_mode: if cli.slides {
+                RenderMode::Slides
+            } else {
+                RenderMode::Document
+            },
             margin_mm: cli.margin,
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
@@ -167,10 +172,11 @@ fn convert_one(cli: &Cli, source: &InputSource, entry_name: String) -> Result<Co
         },
     )?;
     let (bytes, pages) = pdf::render_to_bytes(&typst.source, &source_dir, &typst.assets)?;
+    let warnings = rendered_warnings(typst.warnings, typst.expected_pages, pages);
     Ok(ConvertedDocument {
         bytes,
         pages,
-        warnings: typst.warnings,
+        warnings,
         entry_name,
     })
 }
@@ -201,6 +207,11 @@ fn run_stdin(cli: &Cli) -> Result<()> {
             footer: cli.footer.clone().unwrap_or_else(|| title.clone()),
             page_size: cli.page_size,
             landscape: cli.landscape,
+            render_mode: if cli.slides {
+                RenderMode::Slides
+            } else {
+                RenderMode::Document
+            },
             margin_mm: cli.margin,
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
@@ -209,8 +220,9 @@ fn run_stdin(cli: &Cli) -> Result<()> {
             allow_http: cli.allow_http,
         },
     )?;
-    emit_warnings(cli, &typst.warnings);
     let pages = pdf::render(&typst.source, &output, &source_dir, &typst.assets)?;
+    let warnings = rendered_warnings(typst.warnings, typst.expected_pages, pages);
+    emit_warnings(cli, &warnings);
     if !cli.quiet {
         println!(
             "PDF generated ({pages} page(s)): {}",
@@ -345,6 +357,21 @@ fn emit_warnings(cli: &Cli, warnings: &[String]) {
     for warning in warnings {
         eprintln!("md2pdf: warning: {warning}");
     }
+}
+
+fn rendered_warnings(
+    mut warnings: Vec<String>,
+    expected_pages: Option<usize>,
+    actual_pages: usize,
+) -> Vec<String> {
+    if let Some(expected_pages) = expected_pages
+        && actual_pages > expected_pages
+    {
+        warnings.push(format!(
+            "slide deck produced {actual_pages} PDF pages for {expected_pages} Markdown slides; shorten content that overflowed its 16:9 slide"
+        ));
+    }
+    warnings
 }
 
 fn read_source(path: &Path) -> Result<(String, PathBuf)> {

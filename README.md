@@ -44,6 +44,7 @@ md2pdf document.md
 md2pdf document.md --output build/document.pdf
 md2pdf document.md --code-theme light --accent '#2563EB'
 md2pdf document.md --page-size letter --landscape
+md2pdf presentation.md --slides --output presentation.pdf
 cat document.md | md2pdf - --output document.pdf
 md2pdf './**/*.md' --output-mode merge -o all.pdf
 md2pdf 'docs/**/ADR-*.md' --output-mode zip -o docs.zip -j 4
@@ -62,6 +63,7 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 | `--author TEXT` | empty | PDF metadata author |
 | `--page-size a4\|letter` | `a4` | Page format |
 | `--landscape` | off | Landscape orientation |
+| `--slides` | off | Render a 16:9 deck; `---` starts the next slide |
 | `--margin MM` | `17` | Margins (8–45 mm) |
 | `--accent '#RRGGBB'` | `#C94C35` | Heading color |
 | `--code-theme dark\|light` | `dark` | Code block theme |
@@ -83,11 +85,13 @@ Run `md2pdf --help` for the full list.
 - Remote HTTPS images downloaded by default (`--no-external` to deny, `--allow-http` for cleartext HTTP)
 - Multi-file conversion: merge, zip, or per-file output with parallel jobs
 - A4 / Letter, portrait or landscape
+- 16:9 slide decks from one Markdown file with `---` separators
 - Custom title, author, header, footer, margins, and accent
 
 ## Docs
 
 - [Markdown support](docs/markdown-support.md)
+- [Slide decks](docs/slides.md)
 - [Syntax highlighting](docs/syntax-highlighting.md)
 - [Architecture](docs/architecture.md)
 - [Contributing](CONTRIBUTING.md)

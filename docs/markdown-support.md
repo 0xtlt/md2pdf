@@ -14,7 +14,7 @@
 | Task lists | Yes | Rendered with Unicode symbols |
 | Tables | Yes | Dark header and alternating rows |
 | Block quotes | Yes | Callout with an accent rule |
-| Horizontal rules | Yes | Full-width separator |
+| Horizontal rules | Yes | Full-width separator; slide break with `--slides` |
 | Inline code | Yes | Monospace font |
 | Fenced code blocks | Yes | Language follows the opening fence |
 | Mermaid diagrams | Yes | `mermaid` / `mmd` fences rendered to SVG |

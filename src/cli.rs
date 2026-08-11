@@ -92,6 +92,13 @@ pub struct Cli {
     #[arg(long)]
     pub landscape: bool,
 
+    /// Render a 16:9 slide deck, using horizontal rules as slide separators
+    #[arg(
+        long,
+        conflicts_with_all = ["page_size", "landscape", "page_break_before"]
+    )]
+    pub slides: bool,
+
     /// Page margins in millimetres
     #[arg(long, default_value_t = 17.0)]
     pub margin: f32,

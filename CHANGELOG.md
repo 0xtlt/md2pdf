@@ -5,6 +5,13 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- add `--slides` to render a 16:9 PDF presentation from one Markdown file,
+  using `---` horizontal rules as slide separators;
+- use presentation-sized typography, code, images, and Mermaid layout in slide
+  mode, and warn when slide content overflows onto extra PDF pages.
+
 ## [3.3.1] - 2026-08-08
 
 ### Fixed
