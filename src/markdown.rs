@@ -188,7 +188,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                         body.push_str(&format!(
                             "#block(width: 100%, above: 6pt, below: 14pt, \
                              fill: success-fill, inset: 9pt, \
-                             stroke: (left: 3pt + success-accent))[{}]\n\n",
+                             stroke: success-stroke)[{}]\n\n",
                             buffer.typst
                         ));
                     } else {
@@ -584,6 +584,7 @@ fn document_template(options: &TypstOptions) -> String {
 #let callout-stroke = (left: 3pt + accent)
 #let success-fill = rgb("#EAF7F1")
 #let success-accent = rgb("#237A57")
+#let success-stroke = (left: 3pt + success-accent)
 #let table-header = ink
 #let table-row = white
 #let table-alt = rgb("#F8FAFC")
@@ -744,6 +745,7 @@ fn slides_template(options: &TypstOptions) -> String {
 #let callout-stroke = none
 #let success-fill = rgb("{success_fill}")
 #let success-accent = rgb("{success_accent}")
+#let success-stroke = none
 #let table-header = rgb("{table_header}")
 #let table-row = rgb("{table_row}")
 #let table-alt = rgb("{table_alt}")
@@ -1839,7 +1841,7 @@ mod tests {
         let mut options = options();
         options.render_mode = RenderMode::Slides;
         let document = to_typst(
-            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n\n> Callout.\n\nExpected result: It works.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
             &options,
         )
         .expect("render slides");
@@ -1861,6 +1863,8 @@ mod tests {
         );
         assert!(document.source.contains("columns: (1fr, 1fr)"));
         assert!(document.source.contains("#let callout-stroke = none"));
+        assert!(document.source.contains("#let success-stroke = none"));
+        assert!(!document.source.contains("stroke: (left:"));
         assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
         assert_eq!(document.expected_pages, Some(2));
