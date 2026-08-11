@@ -80,15 +80,37 @@ Run `md2pdf --help` for the full list.
 
 ## Mermaid diagrams
 
-Use a `mermaid` or `mmd` fenced block to embed a diagram without a browser or
-Node.js runtime:
+This compact technical deck combines slide separators, a Mermaid pipeline, and
+syntax-highlighted code. Save it as `technical-deck.md`:
 
 ````markdown
+# Rendering architecture
+
+Markdown to widescreen PDF, entirely in process.
+
+---
+
+### RENDERING PIPELINE
+
+## Embedded diagrams and code
+
 ```mermaid
 flowchart LR
     Markdown --> Parser --> Typst --> PDF
 ```
+
+```rust
+fn main() {
+    println!("16:9 slides");
+}
+```
 ````
+
+Render it with:
+
+```console
+md2pdf technical-deck.md --slides --slide-template modern -o technical-deck.pdf
+```
 
 Mermaid SVG canvases are transparent, so diagrams inherit the document page or
 slide-template background. In slide decks, wide pipelines scale up for room
