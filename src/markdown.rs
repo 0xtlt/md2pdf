@@ -357,7 +357,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 if options.render_mode == RenderMode::Slides
                     && is_slide_separator(markdown, source_range) =>
             {
-                body.push_str("#pagebreak(weak: true)\n")
+                body.push_str("#pagebreak()\n")
             }
             Event::Rule => body.push_str(
                 "#block(width: 100%, above: 14pt, below: 14pt)\
@@ -1687,7 +1687,7 @@ mod tests {
                 .source
                 .contains("#set text(font: \"DejaVu Sans\", size: 16pt")
         );
-        assert!(document.source.contains("#pagebreak(weak: true)"));
+        assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
         assert_eq!(document.expected_pages, Some(2));
     }
@@ -1702,7 +1702,7 @@ mod tests {
         )
         .expect("render slides");
 
-        assert_eq!(document.source.matches("#pagebreak(weak: true)").count(), 1);
+        assert_eq!(document.source.matches("#pagebreak()").count(), 1);
         assert_eq!(document.source.matches("stroke: 0.5pt + border").count(), 5);
         assert_eq!(document.expected_pages, Some(2));
     }
@@ -1714,7 +1714,7 @@ mod tests {
 
         assert!(document.source.contains("paper: \"a4\""));
         assert!(document.source.contains("stroke: 0.5pt + border"));
-        assert!(!document.source.contains("#pagebreak(weak: true)"));
+        assert!(!document.source.contains("#pagebreak()"));
         assert_eq!(document.expected_pages, None);
     }
 

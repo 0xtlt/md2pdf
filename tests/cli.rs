@@ -111,6 +111,36 @@ fn warns_when_a_markdown_slide_overflows_onto_extra_pages() {
 }
 
 #[test]
+fn preserves_an_empty_slide_between_consecutive_separators() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("empty-slide.md");
+    let output = directory.path().join("empty-slide.pdf");
+    fs::write(&source, "# First slide\n\n---\n\n---\n\n## Third slide\n")
+        .expect("write slide deck");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert!(result.status.success(), "{:?}", result);
+    assert!(
+        !String::from_utf8_lossy(&result.stderr).contains("warning"),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        PdfDocument::load(output)
+            .expect("load PDF")
+            .get_pages()
+            .len(),
+        3
+    );
+}
+
+#[test]
 fn rejects_document_page_options_in_slide_mode() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("deck.md");
