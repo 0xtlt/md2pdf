@@ -74,6 +74,8 @@ above the main level-two slide heading:
 - Each `---` horizontal rule starts the next slide.
 - Headings, lists, tables, code, images, links, and Mermaid diagrams use the
   existing Markdown renderer with presentation-sized layout.
+- Mermaid canvases are transparent; wide pipelines scale up, tall diagrams stay
+  within the slide area, and the dark template uses a complete dark palette.
 - Standalone images are constrained to the available slide area without
   stretching, including when `--margin` is increased.
 - Document headers are omitted; slide decks use a discreet physical page count.

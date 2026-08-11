@@ -78,11 +78,29 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 
 Run `md2pdf --help` for the full list.
 
+## Mermaid diagrams
+
+Use a `mermaid` or `mmd` fenced block to embed a diagram without a browser or
+Node.js runtime:
+
+````markdown
+```mermaid
+flowchart LR
+    Markdown --> Parser --> Typst --> PDF
+```
+````
+
+Mermaid SVG canvases are transparent, so diagrams inherit the document page or
+slide-template background. In slide decks, wide pipelines scale up for room
+readability while tall and non-wide diagrams remain constrained to the slide.
+The `dark` slide template automatically uses Mermaid's complete dark palette.
+Gantt and timeline diagrams continue to use the full available width.
+
 ## Features
 
 - Typst PDF engine with embedded fonts
 - TextMate syntax highlighting (dark / light)
-- Mermaid diagrams from `mermaid` / `mmd` fences
+- Transparent, page-aware Mermaid diagrams from `mermaid` / `mmd` fences
 - Clickable links and local images
 - Remote HTTPS images downloaded by default (`--no-external` to deny, `--allow-http` for cleartext HTTP)
 - Multi-file conversion: merge, zip, or per-file output with parallel jobs
