@@ -667,20 +667,20 @@ struct SlidePalette {
 fn slide_palette(template: SlideTemplate) -> SlidePalette {
     match template {
         SlideTemplate::Modern => SlidePalette {
-            canvas: "#FFFFFF",
-            cover_canvas: "#07162D",
-            panel: "#F3F4F6",
-            ink: "#0F1A32",
-            cover_ink: "#FFFFFF",
+            canvas: "#F3EFE7",
+            cover_canvas: "#F3EFE7",
+            panel: "#FFFFFF",
+            ink: "#17202A",
+            cover_ink: "#17202A",
             muted: "#667085",
-            cover_muted: "#CBD5E1",
-            border: "#D7DCE3",
+            cover_muted: "#667085",
+            border: "#D8D1C4",
             callout_fill: "#FFF2EE",
             success_fill: "#EAF7F1",
             success_accent: "#237A57",
-            table_header: "#0F1A32",
+            table_header: "#17202A",
             table_row: "#FFFFFF",
-            table_alt: "#F3F4F6",
+            table_alt: "#F5F1EA",
             on_header: "#FFFFFF",
             link: "#0969DA",
         },
@@ -703,22 +703,22 @@ fn slide_palette(template: SlideTemplate) -> SlidePalette {
             link: "#2563EB",
         },
         SlideTemplate::Dark => SlidePalette {
-            canvas: "#0B1020",
-            cover_canvas: "#0B1020",
-            panel: "#151B2E",
-            ink: "#F5F7FB",
-            cover_ink: "#FFFFFF",
-            muted: "#AAB4C8",
-            cover_muted: "#AAB4C8",
-            border: "#303A52",
-            callout_fill: "#2A1E2B",
-            success_fill: "#122B27",
-            success_accent: "#4FD1A5",
-            table_header: "#27314A",
-            table_row: "#11182A",
-            table_alt: "#1B2338",
-            on_header: "#FFFFFF",
-            link: "#7DD3FC",
+            canvas: "#18181B",
+            cover_canvas: "#18181B",
+            panel: "#27272A",
+            ink: "#FAFAFA",
+            cover_ink: "#FAFAFA",
+            muted: "#A1A1AA",
+            cover_muted: "#A1A1AA",
+            border: "#3F3F46",
+            callout_fill: "#292524",
+            success_fill: "#14332B",
+            success_accent: "#4ADE80",
+            table_header: "#3F3F46",
+            table_row: "#18181B",
+            table_alt: "#27272A",
+            on_header: "#FAFAFA",
+            link: "#67E8F9",
         },
     }
 }
@@ -756,7 +756,6 @@ fn slides_template(options: &TypstOptions) -> String {
   height: 7.5in,
   margin: {margin}mm,
   fill: canvas,
-  background: align(right)[#rect(width: 4pt, height: 100%, fill: accent)],
   footer: context [
     #set text(
       size: 8.5pt,
@@ -1854,7 +1853,7 @@ mod tests {
         );
         assert!(document.source.contains("#slide-cover["));
         assert!(document.source.contains("#slide-content["));
-        assert!(document.source.contains("height: 100%, fill: accent"));
+        assert!(!document.source.contains("background: align(right)"));
         assert!(
             document
                 .source
@@ -1880,6 +1879,28 @@ mod tests {
         assert_eq!(document.source.matches("#pagebreak()").count(), 1);
         assert_eq!(document.source.matches("stroke: 0.5pt + border").count(), 5);
         assert_eq!(document.expected_pages, Some(2));
+    }
+
+    #[test]
+    fn slide_templates_select_distinct_palettes() {
+        for (template, canvas) in [
+            (SlideTemplate::Modern, "#F3EFE7"),
+            (SlideTemplate::Minimal, "#FFFFFF"),
+            (SlideTemplate::Dark, "#18181B"),
+        ] {
+            let mut options = options();
+            options.render_mode = RenderMode::Slides;
+            options.slide_template = template;
+            let document = to_typst("# Palette", &options).expect("render slide palette");
+
+            assert!(
+                document
+                    .source
+                    .contains(&format!("#let canvas = rgb(\"{canvas}\")")),
+                "template={template:?}"
+            );
+            assert!(!document.source.contains("background: align(right)"));
+        }
     }
 
     #[test]

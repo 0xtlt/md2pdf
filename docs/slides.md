@@ -39,16 +39,16 @@ editable `.pptx` file.
 ## Templates
 
 The first Markdown section becomes a full-frame editorial cover. Every section
-after a `---` separator uses a spacious content layout with strong headings, a
-vertical accent rail, and a discreet `current / total` page number.
+after a `---` separator uses a spacious content layout with strong headings and
+a discreet `current / total` page number.
 
 Choose one of three built-in designs:
 
 | Template | Style | Command |
 | --- | --- | --- |
-| `modern` | Navy cover, white editorial pages, strong hierarchy (default) | `--slide-template modern` |
+| `modern` | Warm cream editorial pages with strong hierarchy (default) | `--slide-template modern` |
 | `minimal` | Restrained white layout with generous whitespace | `--slide-template minimal` |
-| `dark` | Dark navy deck with high-contrast text and panels | `--slide-template dark` |
+| `dark` | Neutral charcoal deck with high-contrast text and panels | `--slide-template dark` |
 
 For example:
 

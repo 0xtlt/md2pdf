@@ -12,7 +12,7 @@ All notable changes are documented in this file. The format follows
 - use presentation-sized typography, code, images, and Mermaid layout in slide
   mode, and warn when slide content overflows onto extra PDF pages.
 - provide `modern`, `minimal`, and `dark` built-in slide templates with
-  full-frame covers, editorial content layouts, accent rails, and page counts.
+  full-frame covers, editorial content layouts, and page counts.
 
 ## [3.3.1] - 2026-08-08
 

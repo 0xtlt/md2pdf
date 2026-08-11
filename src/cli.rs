@@ -23,12 +23,12 @@ pub enum CodeTheme {
 /// Built-in visual styles for slide decks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 pub enum SlideTemplate {
-    /// Navy cover, white editorial pages, and strong visual hierarchy.
+    /// Warm editorial pages with a strong visual hierarchy.
     #[default]
     Modern,
     /// Restrained white layout with generous whitespace.
     Minimal,
-    /// Dark navy deck with high-contrast presentation colors.
+    /// Charcoal deck with high-contrast presentation colors.
     Dark,
 }
 
