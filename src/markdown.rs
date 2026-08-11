@@ -116,11 +116,14 @@ pub fn first_title(markdown: &str) -> Option<String> {
 pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
     let expected_pages = (options.render_mode == RenderMode::Slides).then(|| {
         Parser::new_ext(markdown, parser_options())
-            .filter(|event| matches!(event, Event::Rule))
+            .into_offset_iter()
+            .filter(|(event, range)| {
+                matches!(event, Event::Rule) && is_slide_separator(markdown, range.clone())
+            })
             .count()
             + 1
     });
-    let parser = Parser::new_ext(markdown, parser_options());
+    let parser = Parser::new_ext(markdown, parser_options()).into_offset_iter();
     let mut liquid_highlighter = None;
     let mut body = BodyBuilder::default();
     let mut deferred = Vec::new();
@@ -137,7 +140,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
     let mut warnings = Vec::new();
     let mut remote_image_index = 0usize;
 
-    for event in parser {
+    for (event, source_range) in parser {
         if let Some((_, source)) = &mut code {
             match event {
                 Event::Text(text) => source.push_str(&text),
@@ -350,7 +353,10 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
             }
             Event::SoftBreak => push_inline(&mut paragraph, &mut heading, " ", " "),
             Event::HardBreak => push_inline(&mut paragraph, &mut heading, "\\\n", "\n"),
-            Event::Rule if options.render_mode == RenderMode::Slides => {
+            Event::Rule
+                if options.render_mode == RenderMode::Slides
+                    && is_slide_separator(markdown, source_range) =>
+            {
                 body.push_str("#pagebreak(weak: true)\n")
             }
             Event::Rule => body.push_str(
@@ -1585,6 +1591,31 @@ fn parser_options() -> Options {
         | Options::ENABLE_FOOTNOTES
 }
 
+fn is_slide_separator(markdown: &str, source_range: std::ops::Range<usize>) -> bool {
+    let line_start = markdown[..source_range.start]
+        .rfind('\n')
+        .map_or(0, |index| index + 1);
+    let line_end = markdown[source_range.start..]
+        .find('\n')
+        .map_or(markdown.len(), |index| source_range.start + index);
+    if markdown[line_start..line_end].trim_end_matches('\r') != "---"
+        || line_start == 0
+        || line_end == markdown.len()
+    {
+        return false;
+    }
+
+    let preceding_lines = &markdown[..line_start - 1];
+    let preceding_line_start = preceding_lines.rfind('\n').map_or(0, |index| index + 1);
+    let preceding_line_is_blank = preceding_lines[preceding_line_start..].trim().is_empty();
+
+    let following_lines = &markdown[line_end + 1..];
+    let following_line_end = following_lines.find('\n').unwrap_or(following_lines.len());
+    let following_line_is_blank = following_lines[..following_line_end].trim().is_empty();
+
+    preceding_line_is_blank && following_line_is_blank
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1658,6 +1689,21 @@ mod tests {
         );
         assert!(document.source.contains("#pagebreak(weak: true)"));
         assert!(!document.source.contains("paper: \"a4\""));
+        assert_eq!(document.expected_pages, Some(2));
+    }
+
+    #[test]
+    fn slide_mode_only_breaks_on_isolated_triple_dash_lines() {
+        let mut options = options();
+        options.render_mode = RenderMode::Slides;
+        let document = to_typst(
+            "# Opening\n\n***\n\n___\n\n- - -\n\n  ---\n\n---\nNot isolated.\n\n---\n\n## Closing\n",
+            &options,
+        )
+        .expect("render slides");
+
+        assert_eq!(document.source.matches("#pagebreak(weak: true)").count(), 1);
+        assert_eq!(document.source.matches("stroke: 0.5pt + border").count(), 5);
         assert_eq!(document.expected_pages, Some(2));
     }
 
