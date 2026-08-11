@@ -20,6 +20,18 @@ pub enum CodeTheme {
     Light,
 }
 
+/// Built-in visual styles for slide decks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub enum SlideTemplate {
+    /// Warm canvas, elevated cover panel, and strong visual hierarchy.
+    #[default]
+    Modern,
+    /// Restrained white layout with subtle borders and generous whitespace.
+    Minimal,
+    /// Dark navy canvas with high-contrast presentation colors.
+    Dark,
+}
+
 /// How multiple Markdown inputs are packaged into output artifacts.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 pub enum OutputMode {
@@ -99,6 +111,10 @@ pub struct Cli {
     )]
     pub slides: bool,
 
+    /// Built-in visual template for slide decks
+    #[arg(long, value_enum, default_value_t = SlideTemplate::Modern, requires = "slides")]
+    pub slide_template: SlideTemplate,
+
     /// Page margins in millimetres
     #[arg(long, default_value_t = 17.0)]
     pub margin: f32,
@@ -153,6 +169,23 @@ mod tests {
     fn line_numbers_are_disabled_by_default() {
         let cli = Cli::try_parse_from(["md2pdf", "document.md"]).expect("valid arguments");
         assert!(!cli.line_numbers);
+        assert_eq!(cli.slide_template, SlideTemplate::Modern);
+    }
+
+    #[test]
+    fn slide_templates_require_slide_mode() {
+        assert!(
+            Cli::try_parse_from(["md2pdf", "document.md", "--slide-template", "dark"]).is_err()
+        );
+        let cli = Cli::try_parse_from([
+            "md2pdf",
+            "document.md",
+            "--slides",
+            "--slide-template",
+            "dark",
+        ])
+        .expect("valid slide template");
+        assert_eq!(cli.slide_template, SlideTemplate::Dark);
     }
 
     #[test]

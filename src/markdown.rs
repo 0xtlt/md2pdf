@@ -5,7 +5,7 @@ use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, T
 
 use crate::{
     Error, Result,
-    cli::{CodeTheme, PageSize},
+    cli::{CodeTheme, PageSize, SlideTemplate},
     highlight::{StyledToken, SyntaxHighlighter},
     remote::{download_image, is_remote_image_url},
 };
@@ -54,6 +54,8 @@ pub struct TypstOptions {
     pub landscape: bool,
     /// High-level document or slide layout.
     pub render_mode: RenderMode,
+    /// Built-in visual template used for slide decks.
+    pub slide_template: SlideTemplate,
     /// Page margin in millimetres.
     pub margin_mm: f32,
     /// Whether to render the page header.
@@ -139,6 +141,9 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
     let mut image_assets = Vec::new();
     let mut warnings = Vec::new();
     let mut remote_image_index = 0usize;
+    if options.render_mode == RenderMode::Slides {
+        body.push_str("#slide-cover[\n");
+    }
 
     for (event, source_range) in parser {
         if let Some((_, source)) = &mut code {
@@ -180,8 +185,8 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                     if is_expected_result(&buffer.plain) {
                         body.push_str(&format!(
                             "#block(width: 100%, above: 6pt, below: 14pt, \
-                             fill: rgb(\"#EAF7F1\"), inset: 9pt, \
-                             stroke: (left: 3pt + rgb(\"#237A57\")))[{}]\n\n",
+                             fill: success-fill, inset: 9pt, \
+                             stroke: (left: 3pt + success-accent))[{}]\n\n",
                             buffer.typst
                         ));
                     } else {
@@ -221,7 +226,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
             Event::Start(Tag::BlockQuote(_)) => {
                 body.push_str(
                     "#block(width: 100%, above: 6pt, below: 14pt, \
-                     fill: rgb(\"#FFF5F2\"), inset: 9pt, \
+                     fill: callout-fill, inset: 9pt, \
                      stroke: (left: 3pt + accent))[\n",
                 );
             }
@@ -261,8 +266,8 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 let table_columns = alignments.len();
                 body.push_str(&format!(
                     "#block(width: 100%, above: 8pt, below: 14pt)[\n\
-                     #table(columns: {}, inset: 6pt, stroke: 0.4pt + rgb(\"#D0D5DD\"), \
-                     fill: (x, y) => if y == 0 {{ ink }} else if calc.even(y) {{ rgb(\"#F8FAFC\") }},\n",
+                     #table(columns: {}, inset: 6pt, stroke: 0.4pt + border, \
+                     fill: (x, y) => if y == 0 {{ table-header }} else if calc.even(y) {{ table-alt }} else {{ table-row }},\n",
                     table_columns
                 ));
             }
@@ -275,7 +280,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 in_table_cell = true;
                 body.push('[');
                 if in_table_head {
-                    body.push_str("#set text(fill: white, weight: \"bold\"); ");
+                    body.push_str("#set text(fill: on-header, weight: \"bold\"); ");
                 }
                 paragraph = Some(InlineBuffer::default());
             }
@@ -357,7 +362,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 if options.render_mode == RenderMode::Slides
                     && is_slide_separator(markdown, source_range) =>
             {
-                body.push_str("#pagebreak()\n")
+                body.push_str("]\n#pagebreak()\n#slide-content[\n")
             }
             Event::Rule => body.push_str(
                 "#block(width: 100%, above: 14pt, below: 14pt)\
@@ -396,6 +401,9 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         }
     }
 
+    if options.render_mode == RenderMode::Slides {
+        body.push_str("]\n");
+    }
     let rendered = render_mermaid_async(deferred, options)?;
     let source = format!("{}\n{}", template(options), body.finish(&rendered));
     let mut assets = image_assets;
@@ -566,6 +574,14 @@ fn document_template(options: &TypstOptions) -> String {
 #let ink = rgb("#17202A")
 #let muted = rgb("#667085")
 #let border = rgb("#D0D5DD")
+#let callout-fill = rgb("#FFF5F2")
+#let success-fill = rgb("#EAF7F1")
+#let success-accent = rgb("#237A57")
+#let table-header = ink
+#let table-row = white
+#let table-alt = rgb("#F8FAFC")
+#let on-header = white
+#let link-color = rgb("#0969DA")
 
 #set document(title: {title}, author: ({author},))
 #set page(
@@ -603,7 +619,7 @@ fn document_template(options: &TypstOptions) -> String {
   #set text(font: "DejaVu Sans Mono", size: 7.3pt, fill: rgb("{code_text}"))
   #it
 ]
-#show link: it => text(fill: rgb("#0969DA"), it)
+#show link: it => text(fill: link-color, it)
 
 "##,
         accent = options.accent,
@@ -621,7 +637,75 @@ fn document_template(options: &TypstOptions) -> String {
     )
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SlidePalette {
+    canvas: &'static str,
+    panel: &'static str,
+    ink: &'static str,
+    muted: &'static str,
+    border: &'static str,
+    callout_fill: &'static str,
+    success_fill: &'static str,
+    success_accent: &'static str,
+    table_header: &'static str,
+    table_row: &'static str,
+    table_alt: &'static str,
+    on_header: &'static str,
+    link: &'static str,
+}
+
+fn slide_palette(template: SlideTemplate) -> SlidePalette {
+    match template {
+        SlideTemplate::Modern => SlidePalette {
+            canvas: "#F3EFE7",
+            panel: "#FFFFFF",
+            ink: "#17202A",
+            muted: "#667085",
+            border: "#D8D1C4",
+            callout_fill: "#FFF2EE",
+            success_fill: "#EAF7F1",
+            success_accent: "#237A57",
+            table_header: "#17202A",
+            table_row: "#FFFFFF",
+            table_alt: "#F5F1EA",
+            on_header: "#FFFFFF",
+            link: "#0969DA",
+        },
+        SlideTemplate::Minimal => SlidePalette {
+            canvas: "#FFFFFF",
+            panel: "#F8FAFC",
+            ink: "#111827",
+            muted: "#6B7280",
+            border: "#E5E7EB",
+            callout_fill: "#FFF5F2",
+            success_fill: "#ECFDF3",
+            success_accent: "#198754",
+            table_header: "#111827",
+            table_row: "#FFFFFF",
+            table_alt: "#F3F4F6",
+            on_header: "#FFFFFF",
+            link: "#2563EB",
+        },
+        SlideTemplate::Dark => SlidePalette {
+            canvas: "#0B1020",
+            panel: "#151B2E",
+            ink: "#F5F7FB",
+            muted: "#AAB4C8",
+            border: "#303A52",
+            callout_fill: "#2A1E2B",
+            success_fill: "#122B27",
+            success_accent: "#4FD1A5",
+            table_header: "#27314A",
+            table_row: "#11182A",
+            table_alt: "#1B2338",
+            on_header: "#FFFFFF",
+            link: "#7DD3FC",
+        },
+    }
+}
+
 fn slides_template(options: &TypstOptions) -> String {
+    let palette = slide_palette(options.slide_template);
     let (code_fill, code_text) = code_palette(options.code_theme);
     let raw_theme = match options.code_theme {
         CodeTheme::Dark => "#set raw(theme: \"md2pdf-dark.tmTheme\")",
@@ -629,31 +713,50 @@ fn slides_template(options: &TypstOptions) -> String {
     };
     format!(
         r##"#let accent = rgb("{accent}")
-#let ink = rgb("#17202A")
-#let muted = rgb("#667085")
-#let border = rgb("#D0D5DD")
+#let canvas = rgb("{canvas}")
+#let panel = rgb("{panel}")
+#let ink = rgb("{ink}")
+#let muted = rgb("{muted}")
+#let border = rgb("{border}")
+#let callout-fill = rgb("{callout_fill}")
+#let success-fill = rgb("{success_fill}")
+#let success-accent = rgb("{success_accent}")
+#let table-header = rgb("{table_header}")
+#let table-row = rgb("{table_row}")
+#let table-alt = rgb("{table_alt}")
+#let on-header = rgb("{on_header}")
+#let link-color = rgb("{link}")
 
 #set document(title: {title}, author: ({author},))
 #set page(
   width: 13.333333in,
   height: 7.5in,
   margin: {margin}mm,
+  fill: canvas,
+  footer: context [
+    #set text(size: 8.5pt, fill: muted)
+    #align(right)[#counter(page).display("1")]
+  ],
 )
-#set text(font: "DejaVu Sans", size: 16pt, fill: ink)
-#set par(leading: 0.66em, spacing: 0.75em, justify: false)
+#set text(font: "DejaVu Sans", size: 17pt, fill: ink)
+#set par(leading: 0.68em, spacing: 0.72em, justify: false)
+#set list(spacing: 0.58em)
+#set enum(spacing: 0.58em)
 #set heading(numbering: none)
-#show heading.where(level: 1): it => block(width: 100%, above: 34pt, below: 22pt)[
-  #align(center)[#text(size: 34pt, weight: "bold", fill: ink)[#it.body]]
+#show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
+  #align(center)[#text(size: 40pt, weight: "bold", fill: ink)[#it.body]]
 ]
-#show heading.where(level: 2): it => block(above: 4pt, below: 18pt)[
-  #text(size: 28pt, weight: "bold", fill: accent)[#it.body]
+#show heading.where(level: 2): it => block(above: 0pt, below: 20pt)[
+  #text(size: 30pt, weight: "bold", fill: ink)[#it.body]
+  #v(7pt)
+  #line(length: 54pt, stroke: 3pt + accent)
 ]
 #show heading.where(level: 3): it => block(above: 10pt, below: 10pt)[
-  #text(size: 20pt, weight: "bold", fill: accent)[#it.body]
+  #text(size: 21pt, weight: "bold", fill: accent)[#it.body]
 ]
-#show heading.where(level: 4): set text(size: 17pt, weight: "bold", fill: accent)
-#show heading.where(level: 5): set text(size: 16pt, weight: "bold", fill: accent)
-#show heading.where(level: 6): set text(size: 15pt, weight: "bold", fill: accent)
+#show heading.where(level: 4): set text(size: 18pt, weight: "bold", fill: accent)
+#show heading.where(level: 5): set text(size: 17pt, weight: "bold", fill: accent)
+#show heading.where(level: 6): set text(size: 16pt, weight: "bold", fill: accent)
 {raw_theme}
 #show raw.where(block: true): it => block(
   width: 100%,
@@ -665,10 +768,47 @@ fn slides_template(options: &TypstOptions) -> String {
   #set text(font: "DejaVu Sans Mono", size: {code_font_size}pt, fill: rgb("{code_text}"))
   #it
 ]
-#show link: it => text(fill: rgb("#0969DA"), it)
+#show link: it => text(fill: link-color, it)
+
+#let slide-cover(body) = [
+  #set text(size: 18pt, fill: muted)
+  #v(1fr)
+  #align(center)[
+    #block(
+      width: 84%,
+      fill: panel,
+      inset: (x: 32pt, y: 28pt),
+      radius: 16pt,
+      stroke: 0.8pt + border,
+    )[#body]
+  ]
+  #v(1fr)
+]
+
+#let slide-content(body) = block(
+  width: 100%,
+  fill: panel,
+  inset: (x: 24pt, y: 20pt),
+  radius: 12pt,
+  stroke: 0.6pt + border,
+  breakable: true,
+)[#body]
 
 "##,
         accent = options.accent,
+        canvas = palette.canvas,
+        panel = palette.panel,
+        ink = palette.ink,
+        muted = palette.muted,
+        border = palette.border,
+        callout_fill = palette.callout_fill,
+        success_fill = palette.success_fill,
+        success_accent = palette.success_accent,
+        table_header = palette.table_header,
+        table_row = palette.table_row,
+        table_alt = palette.table_alt,
+        on_header = palette.on_header,
+        link = palette.link,
         title = typst_string(&options.title),
         author = typst_string(&options.author),
         margin = options.margin_mm,
@@ -1632,6 +1772,7 @@ mod tests {
             page_size: PageSize::A4,
             landscape: false,
             render_mode: RenderMode::Document,
+            slide_template: SlideTemplate::Modern,
             margin_mm: 17.0,
             show_header: true,
             page_break_prefixes: vec![],
@@ -1685,8 +1826,10 @@ mod tests {
         assert!(
             document
                 .source
-                .contains("#set text(font: \"DejaVu Sans\", size: 16pt")
+                .contains("#set text(font: \"DejaVu Sans\", size: 17pt")
         );
+        assert!(document.source.contains("#slide-cover["));
+        assert!(document.source.contains("#slide-content["));
         assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
         assert_eq!(document.expected_pages, Some(2));

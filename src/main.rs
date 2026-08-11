@@ -163,6 +163,7 @@ fn convert_one(cli: &Cli, source: &InputSource, entry_name: String) -> Result<Co
             } else {
                 RenderMode::Document
             },
+            slide_template: cli.slide_template,
             margin_mm: cli.margin,
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),
@@ -212,6 +213,7 @@ fn run_stdin(cli: &Cli) -> Result<()> {
             } else {
                 RenderMode::Document
             },
+            slide_template: cli.slide_template,
             margin_mm: cli.margin,
             show_header: !cli.no_header,
             page_break_prefixes: cli.page_break_before.clone(),

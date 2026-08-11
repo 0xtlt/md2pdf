@@ -36,6 +36,29 @@ The output is a PDF deck with PowerPoint-compatible widescreen dimensions
 (13.333333 × 7.5 inches). It can be presented full screen, but it is not an
 editable `.pptx` file.
 
+## Templates
+
+The first Markdown section becomes a vertically centered cover card. Every
+section after a `---` separator uses a structured content card with a heading
+rule and discreet page number.
+
+Choose one of three built-in designs:
+
+| Template | Style | Command |
+| --- | --- | --- |
+| `modern` | Warm canvas, white cards, strong hierarchy (default) | `--slide-template modern` |
+| `minimal` | White canvas, restrained borders, generous whitespace | `--slide-template minimal` |
+| `dark` | Dark navy canvas with high-contrast text | `--slide-template dark` |
+
+For example:
+
+```console
+md2pdf presentation.md --slides --slide-template dark -o presentation.pdf
+```
+
+`--accent` customizes the highlight color in every template. The template
+option requires `--slides` and never changes the standard document renderer.
+
 ## Slide behavior
 
 - One Markdown file produces one deck.
@@ -43,7 +66,7 @@ editable `.pptx` file.
 - Headings, lists, tables, code, images, links, and Mermaid diagrams use the
   existing Markdown renderer with presentation-sized layout.
 - Standalone images are constrained to the slide area without stretching.
-- Document headers and footers are omitted.
+- Document headers are omitted; slide decks use a discreet page number.
 - `--accent`, `--margin`, `--code-theme`, and `--line-numbers` still apply.
 - `--page-size`, `--landscape`, and `--page-break-before` cannot be combined
   with `--slides`, because the slide size and boundaries are fixed.

@@ -80,6 +80,40 @@ fn creates_a_three_page_widescreen_slide_deck() {
 }
 
 #[test]
+fn renders_every_builtin_slide_template() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("templates.md");
+    fs::write(
+        &source,
+        "# Template preview\n\nCentered cover copy.\n\n---\n\n## Content\n\n- Clear hierarchy\n- Consistent spacing\n",
+    )
+    .expect("write slide deck");
+
+    for template in ["modern", "minimal", "dark"] {
+        let output = directory.path().join(format!("{template}.pdf"));
+        let result = binary()
+            .arg(&source)
+            .args(["--slides", "--slide-template", template, "--output"])
+            .arg(&output)
+            .output()
+            .expect("run md2pdf");
+
+        assert!(
+            result.status.success(),
+            "template={template}, stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            PdfDocument::load(output)
+                .expect("load template PDF")
+                .get_pages()
+                .len(),
+            2
+        );
+    }
+}
+
+#[test]
 fn warns_when_a_markdown_slide_overflows_onto_extra_pages() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("overflow.md");

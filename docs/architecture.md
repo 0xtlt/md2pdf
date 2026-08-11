@@ -48,6 +48,10 @@ the flowing A4 / Letter layout. Slide mode uses fixed 16:9 pages and maps
 Markdown horizontal-rule events to page breaks. The parser and all other
 Markdown features remain shared between both modes.
 
+Within slide mode, `SlideTemplate` selects a palette at one internal seam. The
+shared cover/content layout and Markdown conversion consume semantic colors,
+so adding a visual template does not duplicate parsing or layout behavior.
+
 User text is never inserted directly into Typst syntax. Quotes, backslashes,
 line breaks, carriage returns, and tabs are escaped before source generation.
 
