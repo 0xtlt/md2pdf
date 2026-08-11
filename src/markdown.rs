@@ -937,19 +937,28 @@ fn mermaid_block(
     options: &TypstOptions,
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
-    // PDF pages are always light. Never inherit `--code-theme dark` or the
-    // crate's modern/default palette for diagrams.
+    // Keep Mermaid's internal palette independent from the code theme. The
+    // canvas itself is made transparent after cropping so it inherits the page.
     let mut render_options = RenderOptions::mermaid_default();
     // Typst resolves a single SVG font family; use the embedded DejaVu face.
     render_options.theme.font_family = "DejaVu Sans".to_owned();
     // Slightly denser than Mermaid's screen defaults so diagrams match print text.
     render_options.theme.font_size = 12.0;
     render_options.theme.background = "#FFFFFF".to_owned();
-    render_options.theme.primary_color = "#ECECFF".to_owned();
-    render_options.theme.primary_text_color = "#333333".to_owned();
-    render_options.theme.primary_border_color = "#7B88A8".to_owned();
-    render_options.theme.line_color = "#2F3B4D".to_owned();
-    render_options.theme.text_color = "#333333".to_owned();
+    if options.render_mode == RenderMode::Slides && options.slide_template == SlideTemplate::Dark {
+        render_options.theme.primary_color = "#27272A".to_owned();
+        render_options.theme.primary_text_color = "#FAFAFA".to_owned();
+        render_options.theme.primary_border_color = "#A1A1AA".to_owned();
+        render_options.theme.line_color = "#D4D4D8".to_owned();
+        render_options.theme.text_color = "#FAFAFA".to_owned();
+        render_options.theme.edge_label_background = "#27272A".to_owned();
+    } else {
+        render_options.theme.primary_color = "#ECECFF".to_owned();
+        render_options.theme.primary_text_color = "#333333".to_owned();
+        render_options.theme.primary_border_color = "#7B88A8".to_owned();
+        render_options.theme.line_color = "#2F3B4D".to_owned();
+        render_options.theme.text_color = "#333333".to_owned();
+    }
     let is_schedule = is_schedule_mermaid(source);
     let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
@@ -958,7 +967,7 @@ fn mermaid_block(
     } else {
         16.0
     };
-    let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg, crop_padding));
+    let svg = make_mermaid_canvas_transparent(&crop_mermaid_svg(&svg, crop_padding));
     let path = format!("md2pdf-mermaid-{index}.svg");
     let width = mermaid_display_width(is_schedule, &svg, options);
     let image = format!("#image({}, width: {width})", typst_string(&path));
@@ -971,8 +980,8 @@ fn mermaid_block(
     Ok((typst, (path, svg.into_bytes())))
 }
 
-/// Keep the Mermaid canvas background white even if a dark theme leaks through.
-fn force_light_mermaid_background(svg: &str) -> String {
+/// Make the full-canvas Mermaid rectangle transparent without touching nodes.
+fn make_mermaid_canvas_transparent(svg: &str) -> String {
     let Some(start) = svg.find("<rect") else {
         return svg.to_owned();
     };
@@ -984,16 +993,18 @@ fn force_light_mermaid_background(svg: &str) -> String {
     if tag.contains("rx=") {
         return svg.to_owned();
     }
-    let is_dark_canvas = tag.contains("fill=\"#333333\"")
+    let is_canvas = tag.contains("fill=\"#FFFFFF\"")
+        || tag.contains("fill=\"#ffffff\"")
+        || tag.contains("fill=\"#333333\"")
         || tag.contains("fill=\"#333\"")
         || tag.contains("fill=\"#1f2020\"")
         || tag.contains("fill=\"#1F2020\"")
         || tag.contains("fill=\"#0d1117\"")
         || tag.contains("fill=\"#0D1117\"");
-    if !is_dark_canvas {
+    if !is_canvas {
         return svg.to_owned();
     }
-    let replacement = replace_attr(tag, "fill", "#FFFFFF");
+    let replacement = replace_attr(tag, "fill", "none");
     format!("{}{}{}", &svg[..start], replacement, &svg[end..])
 }
 
@@ -1443,16 +1454,30 @@ fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
     let natural_height_pt = raw_height * CSS_PX_TO_PT;
     let (content_width_pt, content_height_pt) = mermaid_page_content_pt(options);
     let complex = is_complex_mermaid(raw_width, raw_height);
-    let (max_width_pt, max_height_pt, max_upscale, max_width_mm) = if complex {
-        (
-            content_width_pt * 0.92,
-            content_height_pt * 0.72,
-            1.15,
-            165.0,
-        )
-    } else {
-        (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
-    };
+    let (max_width_pt, max_height_pt, max_upscale, max_width_mm) =
+        match (options.render_mode, complex) {
+            (RenderMode::Slides, true) => (
+                content_width_pt * 0.92,
+                content_height_pt * 0.62,
+                1.3,
+                290.0,
+            ),
+            (RenderMode::Slides, false) => (
+                content_width_pt * 0.72,
+                content_height_pt * 0.42,
+                1.8,
+                230.0,
+            ),
+            (RenderMode::Document, true) => (
+                content_width_pt * 0.92,
+                content_height_pt * 0.72,
+                1.15,
+                165.0,
+            ),
+            (RenderMode::Document, false) => {
+                (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
+            }
+        };
     let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
         .clamp(0.35, max_upscale);
@@ -2240,7 +2265,7 @@ flowchart TD
     }
 
     #[test]
-    fn mermaid_diagrams_use_light_palette_even_with_dark_code_theme() {
+    fn mermaid_diagrams_use_a_transparent_canvas_with_a_light_palette() {
         let mut opts = options();
         opts.code_theme = CodeTheme::Dark;
         let document = to_typst(
@@ -2252,8 +2277,8 @@ flowchart TD
         let first_rect_end = svg.find("/>").expect("background rect");
         let background = &svg[..first_rect_end];
         assert!(
-            background.contains("fill=\"#FFFFFF\""),
-            "expected white Mermaid canvas, got: {background}"
+            background.contains("fill=\"none\""),
+            "expected transparent Mermaid canvas, got: {background}"
         );
         assert!(
             svg.contains("fill=\"#ECECFF\""),
@@ -2264,6 +2289,27 @@ flowchart TD
             "dark Mermaid canvas must not appear on PDF pages"
         );
         assert!(svg.contains("fill=\"#333333\"") || svg.contains(">Markdown<"));
+    }
+
+    #[test]
+    fn mermaid_diagrams_use_contrasting_colors_on_dark_slides() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Diagram\n\n```mermaid\nflowchart LR\n    Markdown --> PDF\n```\n",
+            &opts,
+        )
+        .expect("render Mermaid on dark slides");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(svg.contains("fill=\"#27272A\""), "dark nodes: {svg}");
+        assert!(
+            svg.contains("stroke=\"#D4D4D8\""),
+            "contrasting connectors: {svg}"
+        );
+        assert!(svg.contains("fill=\"#FAFAFA\""), "light labels: {svg}");
     }
 
     #[test]
@@ -2399,6 +2445,24 @@ flowchart TD
         );
         assert!(is_complex_mermaid(900.0, 800.0));
         assert!(!is_complex_mermaid(400.0, 300.0));
+    }
+
+    #[test]
+    fn sizes_simple_mermaid_diagrams_more_generously_in_slides() {
+        let svg = r#"<svg width="450" height="120" viewBox="0 0 450 120"></svg>"#;
+        let document_width_mm = mermaid_display_width_mm(svg, &options());
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let slide_width_mm = mermaid_display_width_mm(svg, &slide_options);
+
+        assert!(
+            slide_width_mm >= document_width_mm * 1.7,
+            "expected slide diagram to be materially larger: document={document_width_mm}, slide={slide_width_mm}"
+        );
+        assert!(
+            (150.0..=230.0).contains(&slide_width_mm),
+            "unexpected slide width_mm={slide_width_mm}"
+        );
     }
 
     #[test]

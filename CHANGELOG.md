@@ -14,6 +14,11 @@ All notable changes are documented in this file. The format follows
 - provide `modern`, `minimal`, and `dark` built-in slide templates with
   full-frame covers, editorial content layouts, and page counts.
 
+### Fixed
+
+- render Mermaid canvases transparently and scale simple diagrams more
+  generously in slide decks.
+
 ## [3.3.1] - 2026-08-08
 
 ### Fixed
