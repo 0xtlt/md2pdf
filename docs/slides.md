@@ -38,17 +38,17 @@ editable `.pptx` file.
 
 ## Templates
 
-The first Markdown section becomes a vertically centered cover card. Every
-section after a `---` separator uses a structured content card with a heading
-rule and discreet page number.
+The first Markdown section becomes a full-frame editorial cover. Every section
+after a `---` separator uses a spacious content layout with strong headings, a
+vertical accent rail, and a discreet `current / total` page number.
 
 Choose one of three built-in designs:
 
 | Template | Style | Command |
 | --- | --- | --- |
-| `modern` | Warm canvas, white cards, strong hierarchy (default) | `--slide-template modern` |
-| `minimal` | White canvas, restrained borders, generous whitespace | `--slide-template minimal` |
-| `dark` | Dark navy canvas with high-contrast text | `--slide-template dark` |
+| `modern` | Navy cover, white editorial pages, strong hierarchy (default) | `--slide-template modern` |
+| `minimal` | Restrained white layout with generous whitespace | `--slide-template minimal` |
+| `dark` | Dark navy deck with high-contrast text and panels | `--slide-template dark` |
 
 For example:
 
@@ -58,6 +58,15 @@ md2pdf presentation.md --slides --slide-template dark -o presentation.pdf
 
 `--accent` customizes the highlight color in every template. The template
 option requires `--slides` and never changes the standard document renderer.
+
+For an editorial hierarchy, use a level-three heading as a small tracked label
+above the main level-two slide heading:
+
+```markdown
+### PROJECT CONTEXT
+
+## Where we are, and where we are going
+```
 
 ## Slide behavior
 

@@ -263,7 +263,11 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 body.push('\n');
             }
             Event::Start(Tag::Table(alignments)) => {
-                let table_columns = alignments.len();
+                let table_columns = if options.render_mode == RenderMode::Slides {
+                    format!("({})", vec!["1fr"; alignments.len()].join(", "))
+                } else {
+                    alignments.len().to_string()
+                };
                 body.push_str(&format!(
                     "#block(width: 100%, above: 8pt, below: 14pt)[\n\
                      #table(columns: {}, inset: 6pt, stroke: 0.4pt + border, \
@@ -405,7 +409,11 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         body.push_str("]\n");
     }
     let rendered = render_mermaid_async(deferred, options)?;
-    let source = format!("{}\n{}", template(options), body.finish(&rendered));
+    let source = format!(
+        "{}\n{}",
+        template(options, expected_pages),
+        body.finish(&rendered)
+    );
     let mut assets = image_assets;
     assets.extend(rendered.into_iter().map(|output| output.asset));
 
@@ -532,10 +540,10 @@ fn render_deferred_mermaid(job: DeferredMermaid, options: &TypstOptions) -> Resu
     Ok(MermaidOutput { typst, asset })
 }
 
-fn template(options: &TypstOptions) -> String {
+fn template(options: &TypstOptions, expected_pages: Option<usize>) -> String {
     match options.render_mode {
         RenderMode::Document => document_template(options),
-        RenderMode::Slides => slides_template(options),
+        RenderMode::Slides => slides_template(options, expected_pages.unwrap_or(1)),
     }
 }
 
@@ -640,9 +648,12 @@ fn document_template(options: &TypstOptions) -> String {
 #[derive(Clone, Copy, Debug)]
 struct SlidePalette {
     canvas: &'static str,
+    cover_canvas: &'static str,
     panel: &'static str,
     ink: &'static str,
+    cover_ink: &'static str,
     muted: &'static str,
+    cover_muted: &'static str,
     border: &'static str,
     callout_fill: &'static str,
     success_fill: &'static str,
@@ -657,25 +668,31 @@ struct SlidePalette {
 fn slide_palette(template: SlideTemplate) -> SlidePalette {
     match template {
         SlideTemplate::Modern => SlidePalette {
-            canvas: "#F3EFE7",
-            panel: "#FFFFFF",
-            ink: "#17202A",
+            canvas: "#FFFFFF",
+            cover_canvas: "#07162D",
+            panel: "#F3F4F6",
+            ink: "#0F1A32",
+            cover_ink: "#FFFFFF",
             muted: "#667085",
-            border: "#D8D1C4",
+            cover_muted: "#CBD5E1",
+            border: "#D7DCE3",
             callout_fill: "#FFF2EE",
             success_fill: "#EAF7F1",
             success_accent: "#237A57",
-            table_header: "#17202A",
+            table_header: "#0F1A32",
             table_row: "#FFFFFF",
-            table_alt: "#F5F1EA",
+            table_alt: "#F3F4F6",
             on_header: "#FFFFFF",
             link: "#0969DA",
         },
         SlideTemplate::Minimal => SlidePalette {
             canvas: "#FFFFFF",
+            cover_canvas: "#FFFFFF",
             panel: "#F8FAFC",
             ink: "#111827",
+            cover_ink: "#111827",
             muted: "#6B7280",
+            cover_muted: "#6B7280",
             border: "#E5E7EB",
             callout_fill: "#FFF5F2",
             success_fill: "#ECFDF3",
@@ -688,9 +705,12 @@ fn slide_palette(template: SlideTemplate) -> SlidePalette {
         },
         SlideTemplate::Dark => SlidePalette {
             canvas: "#0B1020",
+            cover_canvas: "#0B1020",
             panel: "#151B2E",
             ink: "#F5F7FB",
+            cover_ink: "#FFFFFF",
             muted: "#AAB4C8",
+            cover_muted: "#AAB4C8",
             border: "#303A52",
             callout_fill: "#2A1E2B",
             success_fill: "#122B27",
@@ -704,7 +724,7 @@ fn slide_palette(template: SlideTemplate) -> SlidePalette {
     }
 }
 
-fn slides_template(options: &TypstOptions) -> String {
+fn slides_template(options: &TypstOptions, expected_pages: usize) -> String {
     let palette = slide_palette(options.slide_template);
     let (code_fill, code_text) = code_palette(options.code_theme);
     let raw_theme = match options.code_theme {
@@ -714,9 +734,12 @@ fn slides_template(options: &TypstOptions) -> String {
     format!(
         r##"#let accent = rgb("{accent}")
 #let canvas = rgb("{canvas}")
+#let cover-canvas = rgb("{cover_canvas}")
 #let panel = rgb("{panel}")
 #let ink = rgb("{ink}")
+#let cover-ink = rgb("{cover_ink}")
 #let muted = rgb("{muted}")
+#let cover-muted = rgb("{cover_muted}")
 #let border = rgb("{border}")
 #let callout-fill = rgb("{callout_fill}")
 #let success-fill = rgb("{success_fill}")
@@ -734,8 +757,11 @@ fn slides_template(options: &TypstOptions) -> String {
   margin: {margin}mm,
   fill: canvas,
   footer: context [
-    #set text(size: 8.5pt, fill: muted)
-    #align(right)[#counter(page).display("1")]
+    #set text(
+      size: 8.5pt,
+      fill: if counter(page).get().first() == 1 {{ cover-muted }} else {{ muted }},
+    )
+    #align(right)[#counter(page).display("1") / {expected_pages}]
   ],
 )
 #set text(font: "DejaVu Sans", size: 17pt, fill: ink)
@@ -744,15 +770,13 @@ fn slides_template(options: &TypstOptions) -> String {
 #set enum(spacing: 0.58em)
 #set heading(numbering: none)
 #show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
-  #align(center)[#text(size: 40pt, weight: "bold", fill: ink)[#it.body]]
+  #text(size: 40pt, weight: "bold", fill: ink)[#it.body]
 ]
-#show heading.where(level: 2): it => block(above: 0pt, below: 20pt)[
+#show heading.where(level: 2): it => block(above: 0pt, below: 22pt)[
   #text(size: 30pt, weight: "bold", fill: ink)[#it.body]
-  #v(7pt)
-  #line(length: 54pt, stroke: 3pt + accent)
 ]
-#show heading.where(level: 3): it => block(above: 10pt, below: 10pt)[
-  #text(size: 21pt, weight: "bold", fill: accent)[#it.body]
+#show heading.where(level: 3): it => block(above: 8pt, below: 10pt)[
+  #text(size: 10pt, weight: "bold", fill: accent, tracking: 0.18em)[#it.body]
 ]
 #show heading.where(level: 4): set text(size: 18pt, weight: "bold", fill: accent)
 #show heading.where(level: 5): set text(size: 17pt, weight: "bold", fill: accent)
@@ -770,36 +794,44 @@ fn slides_template(options: &TypstOptions) -> String {
 ]
 #show link: it => text(fill: link-color, it)
 
+#let accent-rail() = place(
+  top + right,
+  dx: {margin}mm,
+  dy: -{margin}mm,
+  rect(width: 4pt, height: 7.5in, fill: accent),
+)
+
 #let slide-cover(body) = [
-  #set text(size: 18pt, fill: muted)
-  #v(1fr)
-  #align(center)[
-    #block(
-      width: 84%,
-      fill: panel,
-      inset: (x: 32pt, y: 28pt),
-      radius: 16pt,
-      stroke: 0.8pt + border,
-    )[#body]
+  #place(
+    top + left,
+    dx: -{margin}mm,
+    dy: -{margin}mm,
+    rect(width: 13.333333in, height: 7.5in, fill: cover-canvas),
+  )
+  #accent-rail()
+  #set text(size: 20pt, fill: cover-muted)
+  #show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
+    #text(size: 52pt, weight: "bold", fill: cover-ink)[#it.body]
   ]
+  #v(1fr)
+  #block(width: 88%)[#body]
   #v(1fr)
 ]
 
-#let slide-content(body) = block(
-  width: 100%,
-  fill: panel,
-  inset: (x: 24pt, y: 20pt),
-  radius: 12pt,
-  stroke: 0.6pt + border,
-  breakable: true,
-)[#body]
+#let slide-content(body) = [
+  #accent-rail()
+  #block(width: 100%, breakable: true)[#body]
+]
 
 "##,
         accent = options.accent,
         canvas = palette.canvas,
+        cover_canvas = palette.cover_canvas,
         panel = palette.panel,
         ink = palette.ink,
+        cover_ink = palette.cover_ink,
         muted = palette.muted,
+        cover_muted = palette.cover_muted,
         border = palette.border,
         callout_fill = palette.callout_fill,
         success_fill = palette.success_fill,
@@ -816,6 +848,7 @@ fn slides_template(options: &TypstOptions) -> String {
         code_text = code_text,
         code_font_size = SLIDE_CODE_FONT_SIZE_PT,
         raw_theme = raw_theme,
+        expected_pages = expected_pages,
     )
 }
 
@@ -1816,7 +1849,7 @@ mod tests {
         let mut options = options();
         options.render_mode = RenderMode::Slides;
         let document = to_typst(
-            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n",
+            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
             &options,
         )
         .expect("render slides");
@@ -1830,6 +1863,9 @@ mod tests {
         );
         assert!(document.source.contains("#slide-cover["));
         assert!(document.source.contains("#slide-content["));
+        assert!(document.source.contains("height: 7.5in, fill: accent"));
+        assert!(document.source.contains("display(\"1\") / 2"));
+        assert!(document.source.contains("columns: (1fr, 1fr)"));
         assert!(document.source.contains("#pagebreak()"));
         assert!(!document.source.contains("paper: \"a4\""));
         assert_eq!(document.expected_pages, Some(2));

@@ -23,12 +23,12 @@ pub enum CodeTheme {
 /// Built-in visual styles for slide decks.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 pub enum SlideTemplate {
-    /// Warm canvas, elevated cover panel, and strong visual hierarchy.
+    /// Navy cover, white editorial pages, and strong visual hierarchy.
     #[default]
     Modern,
-    /// Restrained white layout with subtle borders and generous whitespace.
+    /// Restrained white layout with generous whitespace.
     Minimal,
-    /// Dark navy canvas with high-contrast presentation colors.
+    /// Dark navy deck with high-contrast presentation colors.
     Dark,
 }
 
