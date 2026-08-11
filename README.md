@@ -112,7 +112,7 @@ Render it with:
 md2pdf technical-deck.md --slides --slide-template modern -o technical-deck.pdf
 ```
 
-![Generated technical slide with a Mermaid pipeline and highlighted Rust code](docs/assets/slides-technical-example.png)
+![Generated cover slide for the technical deck](docs/assets/slides-technical-example.png)
 
 Mermaid SVG canvases are transparent, so diagrams inherit the document page or
 slide-template background. In slide decks, wide pipelines scale up for room
