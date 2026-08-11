@@ -21,7 +21,7 @@ const SLIDE_WIDTH_MM: f32 = 338.666_66;
 const SLIDE_HEIGHT_MM: f32 = 190.5;
 const SLIDE_IMAGE_MAX_HEIGHT_MM: f32 = 105.0;
 const SLIDE_IMAGE_RESERVED_HEIGHT_MM: f32 = 45.0;
-const SCHEDULE_CROP_PADDING: f32 = 2.0;
+const SCHEDULE_CROP_PADDING: f32 = 32.0;
 
 /// High-level layout selected for the generated PDF.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1035,6 +1035,7 @@ fn crop_mermaid_svg(svg: &str, padding: f32) -> String {
 
 fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
     let without_defs = strip_svg_defs(svg);
+    let canvas = svg_view_box(&without_defs);
     let mut min_x = f32::INFINITY;
     let mut min_y = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
@@ -1058,12 +1059,15 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
         let Some(height) = svg_tag_number(tag, "height") else {
             continue;
         };
-        // Skip the full-canvas background rectangle.
-        let is_background_fill = tag.contains("fill=\"none\"")
-            || tag.contains("fill=\"#FFFFFF\"")
-            || tag.contains("fill=\"#333333\"")
-            || tag.contains("fill=\"#ffffff\"");
-        if width > 200.0 && height > 200.0 && is_background_fill && !tag.contains("rx=") {
+        // Skip only the renderer's full-canvas rectangle. Large transparent
+        // rectangles elsewhere may be meaningful architecture/group borders.
+        let is_canvas_rect = canvas.is_some_and(|(canvas_x, canvas_y, canvas_w, canvas_h)| {
+            (x - canvas_x).abs() <= 0.01
+                && (y - canvas_y).abs() <= 0.01
+                && (width - canvas_w).abs() <= 0.01
+                && (height - canvas_h).abs() <= 0.01
+        });
+        if is_canvas_rect && !tag.contains("rx=") {
             continue;
         }
         include_bounds(&mut min_x, &mut min_y, &mut max_x, &mut max_y, x, y);
@@ -1486,8 +1490,17 @@ fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
         };
     let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
-        .clamp(0.35, max_upscale);
-    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(40.0, max_width_mm)
+        .min(max_upscale);
+    let fitted_width_mm = (natural_width_pt * scale) / POINTS_PER_MM;
+    let minimum_width_mm = 40.0;
+    let height_at_minimum_pt =
+        natural_height_pt * ((minimum_width_mm * POINTS_PER_MM) / natural_width_pt);
+    let width_mm = if fitted_width_mm < minimum_width_mm && height_at_minimum_pt <= max_height_pt {
+        minimum_width_mm
+    } else {
+        fitted_width_mm
+    };
+    width_mm.min(max_width_mm)
 }
 
 fn is_complex_mermaid(width: f32, height: f32) -> bool {
@@ -2380,16 +2393,17 @@ flowchart TD
     #[test]
     fn transparent_mermaid_canvas_is_ignored_by_content_bounds() {
         let svg = concat!(
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\" ",
-            "viewBox=\"0 0 400 300\">",
-            "<rect x=\"0\" y=\"0\" width=\"400\" height=\"300\" fill=\"none\"/>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"500\" height=\"400\" ",
+            "viewBox=\"0 0 500 400\">",
+            "<rect x=\"0\" y=\"0\" width=\"500\" height=\"400\" fill=\"none\"/>",
+            "<rect x=\"50\" y=\"40\" width=\"300\" height=\"250\" fill=\"none\" stroke=\"#999\"/>",
             "<rect x=\"80\" y=\"60\" width=\"100\" height=\"50\" rx=\"4\" fill=\"#ECECFF\"/>",
             "</svg>"
         );
 
         let (min_x, min_y, max_x, max_y) =
             mermaid_svg_content_bounds(svg).expect("painted content bounds");
-        assert_eq!((min_x, min_y, max_x, max_y), (80.0, 60.0, 180.0, 110.0));
+        assert_eq!((min_x, min_y, max_x, max_y), (50.0, 40.0, 350.0, 290.0));
     }
 
     #[test]
@@ -2538,6 +2552,23 @@ flowchart TD
             (85.0..120.0).contains(&slide_width_mm),
             "unexpected non-wide slide width_mm={slide_width_mm}"
         );
+    }
+
+    #[test]
+    fn keeps_tall_mermaid_diagrams_within_the_slide_height_guard() {
+        let svg = r#"<svg width="120" height="1200" viewBox="0 0 120 1200"></svg>"#;
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let width_mm = mermaid_display_width_mm(svg, &slide_options);
+        let rendered_height_mm = width_mm * 1200.0 / 120.0;
+        let (_, content_height_pt) = mermaid_page_content_pt(&slide_options);
+        let maximum_height_mm = (content_height_pt * 0.62) / POINTS_PER_MM;
+
+        assert!(
+            rendered_height_mm <= maximum_height_mm + 0.01,
+            "tall diagram exceeds its height guard: {rendered_height_mm} > {maximum_height_mm}"
+        );
+        assert!(width_mm < 40.0, "unsafe minimum width applied: {width_mm}");
     }
 
     #[test]

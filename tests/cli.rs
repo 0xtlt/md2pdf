@@ -161,6 +161,40 @@ fn keeps_slide_images_within_large_margins() {
 }
 
 #[test]
+fn keeps_a_tall_mermaid_pipeline_on_its_markdown_slide() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("tall-pipeline.md");
+    let output = directory.path().join("tall-pipeline.pdf");
+    fs::write(
+        &source,
+        "## Tall pipeline\n\n```mermaid\nflowchart TD\n    A1 --> A2 --> A3 --> A4 --> A5\n    A5 --> A6 --> A7 --> A8 --> A9 --> A10\n```\n",
+    )
+    .expect("write tall Mermaid slide");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("render tall Mermaid slide");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        PdfDocument::load(output)
+            .expect("load tall Mermaid slide")
+            .get_pages()
+            .len(),
+        1,
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
 fn warns_when_a_markdown_slide_overflows_onto_extra_pages() {
     let directory = tempdir().expect("temporary directory");
     let source = directory.path().join("overflow.md");
