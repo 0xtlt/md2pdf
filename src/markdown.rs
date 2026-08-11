@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use mermaid_rs_renderer::{RenderOptions, render_with_options};
+use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::{
@@ -939,20 +939,18 @@ fn mermaid_block(
 ) -> Result<(String, (String, Vec<u8>))> {
     // Keep Mermaid's internal palette independent from the code theme. The
     // canvas itself is made transparent after cropping so it inherits the page.
+    let dark_slide =
+        options.render_mode == RenderMode::Slides && options.slide_template == SlideTemplate::Dark;
     let mut render_options = RenderOptions::mermaid_default();
+    if dark_slide {
+        render_options.theme = Theme::dark();
+    }
     // Typst resolves a single SVG font family; use the embedded DejaVu face.
     render_options.theme.font_family = "DejaVu Sans".to_owned();
     // Slightly denser than Mermaid's screen defaults so diagrams match print text.
     render_options.theme.font_size = 12.0;
-    render_options.theme.background = "#FFFFFF".to_owned();
-    if options.render_mode == RenderMode::Slides && options.slide_template == SlideTemplate::Dark {
-        render_options.theme.primary_color = "#27272A".to_owned();
-        render_options.theme.primary_text_color = "#FAFAFA".to_owned();
-        render_options.theme.primary_border_color = "#A1A1AA".to_owned();
-        render_options.theme.line_color = "#D4D4D8".to_owned();
-        render_options.theme.text_color = "#FAFAFA".to_owned();
-        render_options.theme.edge_label_background = "#27272A".to_owned();
-    } else {
+    if !dark_slide {
+        render_options.theme.background = "#FFFFFF".to_owned();
         render_options.theme.primary_color = "#ECECFF".to_owned();
         render_options.theme.primary_text_color = "#333333".to_owned();
         render_options.theme.primary_border_color = "#7B88A8".to_owned();
@@ -1061,7 +1059,8 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
             continue;
         };
         // Skip the full-canvas background rectangle.
-        let is_background_fill = tag.contains("fill=\"#FFFFFF\"")
+        let is_background_fill = tag.contains("fill=\"none\"")
+            || tag.contains("fill=\"#FFFFFF\"")
             || tag.contains("fill=\"#333333\"")
             || tag.contains("fill=\"#ffffff\"");
         if width > 200.0 && height > 200.0 && is_background_fill && !tag.contains("rx=") {
@@ -1454,27 +1453,34 @@ fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
     let natural_height_pt = raw_height * CSS_PX_TO_PT;
     let (content_width_pt, content_height_pt) = mermaid_page_content_pt(options);
     let complex = is_complex_mermaid(raw_width, raw_height);
+    let wide = raw_width >= raw_height * 2.0;
     let (max_width_pt, max_height_pt, max_upscale, max_width_mm) =
-        match (options.render_mode, complex) {
-            (RenderMode::Slides, true) => (
+        match (options.render_mode, complex, wide) {
+            (RenderMode::Slides, true, _) => (
                 content_width_pt * 0.92,
                 content_height_pt * 0.62,
                 1.3,
                 290.0,
             ),
-            (RenderMode::Slides, false) => (
+            (RenderMode::Slides, false, true) => (
                 content_width_pt * 0.72,
                 content_height_pt * 0.42,
                 1.8,
                 230.0,
             ),
-            (RenderMode::Document, true) => (
+            (RenderMode::Slides, false, false) => (
+                content_width_pt * 0.55,
+                content_height_pt * 0.38,
+                1.15,
+                160.0,
+            ),
+            (RenderMode::Document, true, _) => (
                 content_width_pt * 0.92,
                 content_height_pt * 0.72,
                 1.15,
                 165.0,
             ),
-            (RenderMode::Document, false) => {
+            (RenderMode::Document, false, _) => {
                 (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
             }
         };
@@ -2304,12 +2310,53 @@ flowchart TD
         let svg = String::from_utf8_lossy(&document.assets[0].1);
 
         assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
-        assert!(svg.contains("fill=\"#27272A\""), "dark nodes: {svg}");
+        assert!(svg.contains("fill=\"#1f2020\""), "dark nodes: {svg}");
         assert!(
-            svg.contains("stroke=\"#D4D4D8\""),
+            svg.contains("stroke=\"lightgrey\""),
             "contrasting connectors: {svg}"
         );
-        assert!(svg.contains("fill=\"#FAFAFA\""), "light labels: {svg}");
+        assert!(svg.contains("fill=\"#e0dfdf\""), "light labels: {svg}");
+    }
+
+    #[test]
+    fn mermaid_sequence_diagrams_use_the_complete_dark_theme() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Sequence\n\n```mermaid\nsequenceDiagram\n    participant A as API\n    participant D as Database\n    A->>D: Query\n    Note over A,D: Cached response\n```\n",
+            &opts,
+        )
+        .expect("render dark Mermaid sequence diagram");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(
+            svg.contains("fill=\"#1f2020\"") && svg.contains("fill=\"#474949\""),
+            "dark actor and note fills: {svg}"
+        );
+        assert!(!svg.contains("#EAEAEA"), "light actor fill leaked: {svg}");
+        assert!(!svg.contains("#FFF5AD"), "light note fill leaked: {svg}");
+    }
+
+    #[test]
+    fn mermaid_pie_diagrams_use_the_complete_dark_theme() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Split\n\n```mermaid\npie title Delivery split\n    \"Build\" : 60\n    \"Review\" : 40\n```\n",
+            &opts,
+        )
+        .expect("render dark Mermaid pie diagram");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(svg.contains("fill=\"#0b0000\""), "dark pie colors: {svg}");
+        assert!(
+            svg.contains("fill=\"lightgrey\"") || svg.contains("fill=\"#ccc\""),
+            "light pie labels: {svg}"
+        );
     }
 
     #[test]
@@ -2328,6 +2375,21 @@ flowchart TD
             "expected tighter crop, got {width}x{height}: {cropped}"
         );
         assert!(cropped.contains("viewBox=\""));
+    }
+
+    #[test]
+    fn transparent_mermaid_canvas_is_ignored_by_content_bounds() {
+        let svg = concat!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\" ",
+            "viewBox=\"0 0 400 300\">",
+            "<rect x=\"0\" y=\"0\" width=\"400\" height=\"300\" fill=\"none\"/>",
+            "<rect x=\"80\" y=\"60\" width=\"100\" height=\"50\" rx=\"4\" fill=\"#ECECFF\"/>",
+            "</svg>"
+        );
+
+        let (min_x, min_y, max_x, max_y) =
+            mermaid_svg_content_bounds(svg).expect("painted content bounds");
+        assert_eq!((min_x, min_y, max_x, max_y), (80.0, 60.0, 180.0, 110.0));
     }
 
     #[test]
@@ -2462,6 +2524,19 @@ flowchart TD
         assert!(
             (150.0..=230.0).contains(&slide_width_mm),
             "unexpected slide width_mm={slide_width_mm}"
+        );
+    }
+
+    #[test]
+    fn avoids_overgrowing_non_wide_mermaid_diagrams_in_slides() {
+        let svg = r#"<svg width="450" height="300" viewBox="0 0 450 300"></svg>"#;
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let slide_width_mm = mermaid_display_width_mm(svg, &slide_options);
+
+        assert!(
+            (85.0..120.0).contains(&slide_width_mm),
+            "unexpected non-wide slide width_mm={slide_width_mm}"
         );
     }
 
