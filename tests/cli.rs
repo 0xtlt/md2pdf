@@ -4,6 +4,7 @@ use std::{
     process::{Command, Stdio},
 };
 
+use lopdf::Document as PdfDocument;
 use tempfile::tempdir;
 
 fn binary() -> Command {
@@ -32,6 +33,243 @@ fn creates_a_pdf_from_a_positional_source() {
     let pdf = fs::read(output).expect("read PDF");
     assert!(pdf.starts_with(b"%PDF-"));
     assert!(pdf.len() > 10_000);
+}
+
+#[test]
+fn creates_a_three_page_widescreen_slide_deck() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("deck.md");
+    let output = directory.path().join("deck.pdf");
+    fs::write(
+        &source,
+        "# Widescreen deck\n\nOpening slide.\n\n---\n\n## Architecture\n\n- Parser\n- Typst\n\n---\n\n## Demo\n\n```rust\nfn main() {}\n```\n",
+    )
+    .expect("write slide deck");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(!String::from_utf8_lossy(&result.stderr).contains("warning"));
+    let pdf = PdfDocument::load(&output).expect("load slide PDF");
+    let pages = pdf.get_pages();
+    assert_eq!(pages.len(), 3);
+    for page_id in pages.values() {
+        let page = pdf
+            .get_object(*page_id)
+            .and_then(lopdf::Object::as_dict)
+            .expect("page dictionary");
+        let media_box = page
+            .get(b"MediaBox")
+            .and_then(lopdf::Object::as_array)
+            .expect("page media box");
+        let width = media_box[2].as_float().expect("page width")
+            - media_box[0].as_float().expect("page x origin");
+        let height = media_box[3].as_float().expect("page height")
+            - media_box[1].as_float().expect("page y origin");
+        assert!((width / height - 16.0 / 9.0).abs() < 0.001);
+    }
+}
+
+#[test]
+fn renders_every_builtin_slide_template() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("templates.md");
+    fs::write(
+        &source,
+        "# Template preview\n\nCentered cover copy.\n\n---\n\n## Content\n\n- Clear hierarchy\n- Consistent spacing\n",
+    )
+    .expect("write slide deck");
+
+    for template in ["modern", "minimal", "dark"] {
+        let output = directory.path().join(format!("{template}.pdf"));
+        let result = binary()
+            .arg(&source)
+            .args(["--slides", "--slide-template", template, "--output"])
+            .arg(&output)
+            .output()
+            .expect("run md2pdf");
+
+        assert!(
+            result.status.success(),
+            "template={template}, stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            PdfDocument::load(output)
+                .expect("load template PDF")
+                .get_pages()
+                .len(),
+            2
+        );
+    }
+}
+
+#[test]
+fn keeps_slide_images_within_large_margins() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("image-deck.md");
+    let image = directory.path().join("test.svg");
+    fs::copy(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures")
+            .join("test.svg"),
+        &image,
+    )
+    .expect("copy image fixture");
+    fs::write(
+        &source,
+        "# Image deck\n\nCover.\n\n---\n\n## Diagram\n\n![Test](test.svg)\n",
+    )
+    .expect("write slide deck");
+
+    for margin in [35, 40, 45] {
+        let output = directory.path().join(format!("margin-{margin}.pdf"));
+        let result = binary()
+            .arg(&source)
+            .arg("--slides")
+            .arg("--margin")
+            .arg(margin.to_string())
+            .arg("--output")
+            .arg(&output)
+            .output()
+            .expect("render image slide");
+
+        assert!(
+            result.status.success(),
+            "margin={margin}, stderr={}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(
+            PdfDocument::load(output)
+                .expect("load image slide PDF")
+                .get_pages()
+                .len(),
+            2,
+            "margin={margin}"
+        );
+    }
+}
+
+#[test]
+fn keeps_a_tall_mermaid_pipeline_on_its_markdown_slide() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("tall-pipeline.md");
+    let output = directory.path().join("tall-pipeline.pdf");
+    fs::write(
+        &source,
+        "## Tall pipeline\n\n```mermaid\nflowchart TD\n    A1 --> A2 --> A3 --> A4 --> A5\n    A5 --> A6 --> A7 --> A8 --> A9 --> A10\n```\n",
+    )
+    .expect("write tall Mermaid slide");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("render tall Mermaid slide");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        PdfDocument::load(output)
+            .expect("load tall Mermaid slide")
+            .get_pages()
+            .len(),
+        1,
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn warns_when_a_markdown_slide_overflows_onto_extra_pages() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("overflow.md");
+    let output = directory.path().join("overflow.pdf");
+    let paragraphs = (1..=80)
+        .map(|index| format!("Paragraph {index} contains enough text to occupy vertical space."))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    fs::write(&source, format!("# Overflow\n\n{paragraphs}\n")).expect("write overflowing slide");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert!(result.status.success(), "{:?}", result);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("Markdown slides"), "stderr: {stderr}");
+    assert!(stderr.contains("shorten content"), "stderr: {stderr}");
+    assert!(
+        PdfDocument::load(output)
+            .expect("load PDF")
+            .get_pages()
+            .len()
+            > 1
+    );
+}
+
+#[test]
+fn preserves_an_empty_slide_between_consecutive_separators() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("empty-slide.md");
+    let output = directory.path().join("empty-slide.pdf");
+    fs::write(&source, "# First slide\n\n---\n\n---\n\n## Third slide\n")
+        .expect("write slide deck");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--output"])
+        .arg(&output)
+        .output()
+        .expect("run md2pdf");
+
+    assert!(result.status.success(), "{:?}", result);
+    assert!(
+        !String::from_utf8_lossy(&result.stderr).contains("warning"),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    assert_eq!(
+        PdfDocument::load(output)
+            .expect("load PDF")
+            .get_pages()
+            .len(),
+        3
+    );
+}
+
+#[test]
+fn rejects_document_page_options_in_slide_mode() {
+    let directory = tempdir().expect("temporary directory");
+    let source = directory.path().join("deck.md");
+    fs::write(&source, "# Deck\n").expect("write slide deck");
+
+    let result = binary()
+        .arg(&source)
+        .args(["--slides", "--page-size", "letter"])
+        .output()
+        .expect("run md2pdf");
+
+    assert_eq!(result.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("cannot be used with"), "stderr: {stderr}");
 }
 
 #[test]

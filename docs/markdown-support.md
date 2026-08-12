@@ -14,7 +14,7 @@
 | Task lists | Yes | Rendered with Unicode symbols |
 | Tables | Yes | Dark header and alternating rows |
 | Block quotes | Yes | Callout with an accent rule |
-| Horizontal rules | Yes | Full-width separator |
+| Horizontal rules | Yes | Full-width separator; slide break with `--slides` |
 | Inline code | Yes | Monospace font |
 | Fenced code blocks | Yes | Language follows the opening fence |
 | Mermaid diagrams | Yes | `mermaid` / `mmd` fences rendered to SVG |
@@ -36,11 +36,13 @@ examples.
 ## Mermaid diagrams
 
 Fenced blocks tagged `mermaid` or `mmd` are rendered to SVG with a pure-Rust
-Mermaid engine and embedded as centered images. Diagrams use Mermaid's classic
-light palette so they match the light PDF page. Labels use the embedded DejaVu
-Sans font. Simple diagrams stay compact; large diagrams may use more of the page
-so text remains readable. Invalid Mermaid source fails PDF generation with a
-clear error. No browser or Node.js runtime is required.
+Mermaid engine and embedded as centered images. SVG canvases are transparent so
+they inherit the page background. Documents and light slide templates use
+Mermaid's classic light palette; dark slides use its complete dark palette.
+Labels use the embedded DejaVu Sans font. Wide pipelines grow more generously
+in slide decks, while tall and non-wide diagrams stay within the slide area.
+Invalid Mermaid source fails PDF generation with a clear error. No browser or
+Node.js runtime is required.
 
 Supported diagram families include flowcharts, sequence, class, state, ER, pie,
 XY, quadrant, gantt, timeline, journey, mindmap, and git graphs, subject to the

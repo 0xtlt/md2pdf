@@ -5,6 +5,22 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-12
+
+### Added
+
+- add `--slides` to render a 16:9 PDF presentation from one Markdown file,
+  using `---` horizontal rules as slide separators;
+- use presentation-sized typography, code, images, and Mermaid layout in slide
+  mode, and warn when slide content overflows onto extra PDF pages.
+- provide `modern`, `minimal`, and `dark` built-in slide templates with
+  full-frame covers, editorial content layouts, and page counts.
+
+### Fixed
+
+- render Mermaid canvases transparently and scale simple diagrams more
+  generously in slide decks.
+
 ## [3.3.1] - 2026-08-08
 
 ### Fixed
@@ -139,7 +155,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.3.1...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.0...HEAD
+[3.4.0]: https://github.com/0xtlt/md2pdf/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/0xtlt/md2pdf/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/0xtlt/md2pdf/compare/v3.2.2...v3.3.0
 [3.2.2]: https://github.com/0xtlt/md2pdf/compare/v3.2.1...v3.2.2

@@ -43,6 +43,15 @@ the current paragraph, heading, code block, image, list, or table. Fenced
 `mermaid` / `mmd` blocks are rendered to SVG, attached as in-memory virtual
 assets, and resolved by Typst before the filesystem resolver.
 
+The `RenderMode` seam selects one of two Typst templates. Document mode keeps
+the flowing A4 / Letter layout. Slide mode uses fixed 16:9 pages and maps
+Markdown horizontal-rule events to page breaks. The parser and all other
+Markdown features remain shared between both modes.
+
+Within slide mode, `SlideTemplate` selects a palette at one internal seam. The
+shared cover/content layout and Markdown conversion consume semantic colors,
+so adding a visual template does not duplicate parsing or layout behavior.
+
 User text is never inserted directly into Typst syntax. Quotes, backslashes,
 line breaks, carriage returns, and tabs are escaped before source generation.
 
@@ -108,6 +117,9 @@ for syntax-highlighted code and auto-sized tables.
 ## Invariants
 
 - line numbers are disabled by default;
+- document mode preserves horizontal rules and its existing A4 / Letter layout;
+- slide mode uses a fixed 16:9 page and reports a warning when content creates
+  more PDF pages than Markdown slides;
 - code cannot exceed the printable width;
 - each code chunk remains indivisible within a page;
 - missing output directories are created automatically;

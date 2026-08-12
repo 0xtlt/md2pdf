@@ -1,19 +1,37 @@
 use std::path::{Path, PathBuf};
 
-use mermaid_rs_renderer::{RenderOptions, render_with_options};
+use mermaid_rs_renderer::{RenderOptions, Theme, render_with_options};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 
 use crate::{
     Error, Result,
-    cli::{CodeTheme, PageSize},
+    cli::{CodeTheme, PageSize, SlideTemplate},
     highlight::{StyledToken, SyntaxHighlighter},
     remote::{download_image, is_remote_image_url},
 };
 
 const POINTS_PER_MM: f32 = 2.834_646;
-const CODE_GLYPH_WIDTH_PT: f32 = 4.45;
-const CODE_LINE_HEIGHT_PT: f32 = 8.8;
-const SCHEDULE_CROP_PADDING: f32 = 2.0;
+const DOCUMENT_CODE_FONT_SIZE_PT: f32 = 7.3;
+const SLIDE_CODE_FONT_SIZE_PT: f32 = 9.5;
+const DOCUMENT_CODE_GLYPH_WIDTH_PT: f32 = 4.45;
+const SLIDE_CODE_GLYPH_WIDTH_PT: f32 = 5.8;
+const DOCUMENT_CODE_LINE_HEIGHT_PT: f32 = 8.8;
+const SLIDE_CODE_LINE_HEIGHT_PT: f32 = 11.5;
+const SLIDE_WIDTH_MM: f32 = 338.666_66;
+const SLIDE_HEIGHT_MM: f32 = 190.5;
+const SLIDE_IMAGE_MAX_HEIGHT_MM: f32 = 105.0;
+const SLIDE_IMAGE_RESERVED_HEIGHT_MM: f32 = 45.0;
+const SCHEDULE_CROP_PADDING: f32 = 32.0;
+
+/// High-level layout selected for the generated PDF.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum RenderMode {
+    /// Flowing A4 or US Letter technical document.
+    #[default]
+    Document,
+    /// Fixed-size 16:9 pages separated by Markdown horizontal rules.
+    Slides,
+}
 
 /// Rendering options used to build the intermediate Typst document.
 #[derive(Clone, Debug)]
@@ -36,6 +54,10 @@ pub struct TypstOptions {
     pub page_size: PageSize,
     /// Whether pages are rendered in landscape orientation.
     pub landscape: bool,
+    /// High-level document or slide layout.
+    pub render_mode: RenderMode,
+    /// Built-in visual template used for slide decks.
+    pub slide_template: SlideTemplate,
     /// Page margin in millimetres.
     pub margin_mm: f32,
     /// Whether to render the page header.
@@ -59,6 +81,8 @@ pub struct TypstDocument {
     pub assets: Vec<(String, Vec<u8>)>,
     /// Non-fatal issues such as skipped or failed images.
     pub warnings: Vec<String>,
+    /// Markdown slide count used to detect content overflowing onto extra pages.
+    pub expected_pages: Option<usize>,
 }
 
 #[derive(Default)]
@@ -94,7 +118,16 @@ pub fn first_title(markdown: &str) -> Option<String> {
 /// diagrams can overlap on available CPU cores. Liquid highlighting stays on the
 /// synchronous path so a single TextMate highlighter can be reused.
 pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument> {
-    let parser = Parser::new_ext(markdown, parser_options());
+    let expected_pages = (options.render_mode == RenderMode::Slides).then(|| {
+        Parser::new_ext(markdown, parser_options())
+            .into_offset_iter()
+            .filter(|(event, range)| {
+                matches!(event, Event::Rule) && is_slide_separator(markdown, range.clone())
+            })
+            .count()
+            + 1
+    });
+    let parser = Parser::new_ext(markdown, parser_options()).into_offset_iter();
     let mut liquid_highlighter = None;
     let mut body = BodyBuilder::default();
     let mut deferred = Vec::new();
@@ -110,8 +143,11 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
     let mut image_assets = Vec::new();
     let mut warnings = Vec::new();
     let mut remote_image_index = 0usize;
+    if options.render_mode == RenderMode::Slides {
+        body.push_str("#slide-cover[\n");
+    }
 
-    for event in parser {
+    for (event, source_range) in parser {
         if let Some((_, source)) = &mut code {
             match event {
                 Event::Text(text) => source.push_str(&text),
@@ -128,8 +164,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                         body.push_str(&code_block(
                             &source,
                             &language,
-                            max_code_columns(options),
-                            max_code_lines(options),
+                            code_layout(options),
                             options.line_numbers,
                             options.code_theme,
                             &mut liquid_highlighter,
@@ -152,8 +187,8 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                     if is_expected_result(&buffer.plain) {
                         body.push_str(&format!(
                             "#block(width: 100%, above: 6pt, below: 14pt, \
-                             fill: rgb(\"#EAF7F1\"), inset: 9pt, \
-                             stroke: (left: 3pt + rgb(\"#237A57\")))[{}]\n\n",
+                             fill: success-fill, inset: 9pt, \
+                             stroke: success-stroke)[{}]\n\n",
                             buffer.typst
                         ));
                     } else {
@@ -193,8 +228,8 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
             Event::Start(Tag::BlockQuote(_)) => {
                 body.push_str(
                     "#block(width: 100%, above: 6pt, below: 14pt, \
-                     fill: rgb(\"#FFF5F2\"), inset: 9pt, \
-                     stroke: (left: 3pt + accent))[\n",
+                     fill: callout-fill, inset: 9pt, \
+                     stroke: callout-stroke)[\n",
                 );
             }
             Event::End(TagEnd::BlockQuote(_)) => {
@@ -230,11 +265,15 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 body.push('\n');
             }
             Event::Start(Tag::Table(alignments)) => {
-                let table_columns = alignments.len();
+                let table_columns = if options.render_mode == RenderMode::Slides {
+                    format!("({})", vec!["1fr"; alignments.len()].join(", "))
+                } else {
+                    alignments.len().to_string()
+                };
                 body.push_str(&format!(
                     "#block(width: 100%, above: 8pt, below: 14pt)[\n\
-                     #table(columns: {}, inset: 6pt, stroke: 0.4pt + rgb(\"#D0D5DD\"), \
-                     fill: (x, y) => if y == 0 {{ ink }} else if calc.even(y) {{ rgb(\"#F8FAFC\") }},\n",
+                     #table(columns: {}, inset: 6pt, stroke: 0.4pt + border, \
+                     fill: (x, y) => if y == 0 {{ table-header }} else if calc.even(y) {{ table-alt }} else {{ table-row }},\n",
                     table_columns
                 ));
             }
@@ -247,7 +286,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                 in_table_cell = true;
                 body.push('[');
                 if in_table_head {
-                    body.push_str("#set text(fill: white, weight: \"bold\"); ");
+                    body.push_str("#set text(fill: on-header, weight: \"bold\"); ");
                 }
                 paragraph = Some(InlineBuffer::default());
             }
@@ -273,11 +312,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
                             .is_some_and(|buffer| buffer.typst.is_empty());
                         if standalone_image {
                             paragraph.take();
-                            body.push_str(&format!(
-                                "#block(width: 100%, above: 7pt, below: 18pt)\
-                                 [#align(center)[#image({}, width: 90%)]]\n\n",
-                                typst_string(&image_path)
-                            ));
+                            body.push_str(&render_standalone_image(&image_path, options));
                         } else {
                             push_inline(
                                 &mut paragraph,
@@ -329,6 +364,12 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
             }
             Event::SoftBreak => push_inline(&mut paragraph, &mut heading, " ", " "),
             Event::HardBreak => push_inline(&mut paragraph, &mut heading, "\\\n", "\n"),
+            Event::Rule
+                if options.render_mode == RenderMode::Slides
+                    && is_slide_separator(markdown, source_range) =>
+            {
+                body.push_str("]\n#pagebreak()\n#slide-content[\n")
+            }
             Event::Rule => body.push_str(
                 "#block(width: 100%, above: 14pt, below: 14pt)\
                  [#line(length: 100%, stroke: 0.5pt + border)]\n\n",
@@ -366,6 +407,9 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         }
     }
 
+    if options.render_mode == RenderMode::Slides {
+        body.push_str("]\n");
+    }
     let rendered = render_mermaid_async(deferred, options)?;
     let source = format!("{}\n{}", template(options), body.finish(&rendered));
     let mut assets = image_assets;
@@ -375,6 +419,7 @@ pub fn to_typst(markdown: &str, options: &TypstOptions) -> Result<TypstDocument>
         source,
         assets,
         warnings,
+        expected_pages,
     })
 }
 
@@ -494,6 +539,13 @@ fn render_deferred_mermaid(job: DeferredMermaid, options: &TypstOptions) -> Resu
 }
 
 fn template(options: &TypstOptions) -> String {
+    match options.render_mode {
+        RenderMode::Document => document_template(options),
+        RenderMode::Slides => slides_template(options),
+    }
+}
+
+fn document_template(options: &TypstOptions) -> String {
     let paper = match options.page_size {
         PageSize::A4 => "a4",
         PageSize::Letter => "us-letter",
@@ -528,6 +580,16 @@ fn template(options: &TypstOptions) -> String {
 #let ink = rgb("#17202A")
 #let muted = rgb("#667085")
 #let border = rgb("#D0D5DD")
+#let callout-fill = rgb("#FFF5F2")
+#let callout-stroke = (left: 3pt + accent)
+#let success-fill = rgb("#EAF7F1")
+#let success-accent = rgb("#237A57")
+#let success-stroke = (left: 3pt + success-accent)
+#let table-header = ink
+#let table-row = white
+#let table-alt = rgb("#F8FAFC")
+#let on-header = white
+#let link-color = rgb("#0969DA")
 
 #set document(title: {title}, author: ({author},))
 #set page(
@@ -565,7 +627,7 @@ fn template(options: &TypstOptions) -> String {
   #set text(font: "DejaVu Sans Mono", size: 7.3pt, fill: rgb("{code_text}"))
   #it
 ]
-#show link: it => text(fill: rgb("#0969DA"), it)
+#show link: it => text(fill: link-color, it)
 
 "##,
         accent = options.accent,
@@ -583,17 +645,210 @@ fn template(options: &TypstOptions) -> String {
     )
 }
 
+#[derive(Clone, Copy, Debug)]
+struct SlidePalette {
+    canvas: &'static str,
+    cover_canvas: &'static str,
+    panel: &'static str,
+    ink: &'static str,
+    cover_ink: &'static str,
+    muted: &'static str,
+    cover_muted: &'static str,
+    border: &'static str,
+    callout_fill: &'static str,
+    success_fill: &'static str,
+    success_accent: &'static str,
+    table_header: &'static str,
+    table_row: &'static str,
+    table_alt: &'static str,
+    on_header: &'static str,
+    link: &'static str,
+}
+
+fn slide_palette(template: SlideTemplate) -> SlidePalette {
+    match template {
+        SlideTemplate::Modern => SlidePalette {
+            canvas: "#F3EFE7",
+            cover_canvas: "#F3EFE7",
+            panel: "#FFFFFF",
+            ink: "#17202A",
+            cover_ink: "#17202A",
+            muted: "#667085",
+            cover_muted: "#667085",
+            border: "#D8D1C4",
+            callout_fill: "#FFF2EE",
+            success_fill: "#EAF7F1",
+            success_accent: "#237A57",
+            table_header: "#17202A",
+            table_row: "#FFFFFF",
+            table_alt: "#F5F1EA",
+            on_header: "#FFFFFF",
+            link: "#0969DA",
+        },
+        SlideTemplate::Minimal => SlidePalette {
+            canvas: "#FFFFFF",
+            cover_canvas: "#FFFFFF",
+            panel: "#F8FAFC",
+            ink: "#111827",
+            cover_ink: "#111827",
+            muted: "#6B7280",
+            cover_muted: "#6B7280",
+            border: "#E5E7EB",
+            callout_fill: "#FFF5F2",
+            success_fill: "#ECFDF3",
+            success_accent: "#198754",
+            table_header: "#111827",
+            table_row: "#FFFFFF",
+            table_alt: "#F3F4F6",
+            on_header: "#FFFFFF",
+            link: "#2563EB",
+        },
+        SlideTemplate::Dark => SlidePalette {
+            canvas: "#18181B",
+            cover_canvas: "#18181B",
+            panel: "#27272A",
+            ink: "#FAFAFA",
+            cover_ink: "#FAFAFA",
+            muted: "#A1A1AA",
+            cover_muted: "#A1A1AA",
+            border: "#3F3F46",
+            callout_fill: "#292524",
+            success_fill: "#14332B",
+            success_accent: "#4ADE80",
+            table_header: "#3F3F46",
+            table_row: "#18181B",
+            table_alt: "#27272A",
+            on_header: "#FAFAFA",
+            link: "#67E8F9",
+        },
+    }
+}
+
+fn slides_template(options: &TypstOptions) -> String {
+    let palette = slide_palette(options.slide_template);
+    let (code_fill, code_text) = code_palette(options.code_theme);
+    let raw_theme = match options.code_theme {
+        CodeTheme::Dark => "#set raw(theme: \"md2pdf-dark.tmTheme\")",
+        CodeTheme::Light => "",
+    };
+    format!(
+        r##"#let accent = rgb("{accent}")
+#let canvas = rgb("{canvas}")
+#let cover-canvas = rgb("{cover_canvas}")
+#let panel = rgb("{panel}")
+#let ink = rgb("{ink}")
+#let cover-ink = rgb("{cover_ink}")
+#let muted = rgb("{muted}")
+#let cover-muted = rgb("{cover_muted}")
+#let border = rgb("{border}")
+#let callout-fill = rgb("{callout_fill}")
+#let callout-stroke = none
+#let success-fill = rgb("{success_fill}")
+#let success-accent = rgb("{success_accent}")
+#let success-stroke = none
+#let table-header = rgb("{table_header}")
+#let table-row = rgb("{table_row}")
+#let table-alt = rgb("{table_alt}")
+#let on-header = rgb("{on_header}")
+#let link-color = rgb("{link}")
+
+#set document(title: {title}, author: ({author},))
+#set page(
+  width: 13.333333in,
+  height: 7.5in,
+  margin: {margin}mm,
+  fill: canvas,
+  footer: context [
+    #set text(
+      size: 8.5pt,
+      fill: if counter(page).get().first() == 1 {{ cover-muted }} else {{ muted }},
+    )
+    #align(right)[#counter(page).display("1") / #counter(page).final().first()]
+  ],
+)
+#set text(font: "DejaVu Sans", size: 17pt, fill: ink)
+#set par(leading: 0.68em, spacing: 0.72em, justify: false)
+#set list(spacing: 0.58em)
+#set enum(spacing: 0.58em)
+#set heading(numbering: none)
+#show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
+  #text(size: 40pt, weight: "bold", fill: ink)[#it.body]
+]
+#show heading.where(level: 2): it => block(above: 0pt, below: 22pt)[
+  #text(size: 30pt, weight: "bold", fill: ink)[#it.body]
+]
+#show heading.where(level: 3): it => block(above: 8pt, below: 10pt)[
+  #text(size: 10pt, weight: "bold", fill: accent, tracking: 0.18em)[#it.body]
+]
+#show heading.where(level: 4): set text(size: 18pt, weight: "bold", fill: accent)
+#show heading.where(level: 5): set text(size: 17pt, weight: "bold", fill: accent)
+#show heading.where(level: 6): set text(size: 16pt, weight: "bold", fill: accent)
+{raw_theme}
+#show raw.where(block: true): it => block(
+  width: 100%,
+  fill: rgb("{code_fill}"),
+  inset: 10pt,
+  radius: 3pt,
+  breakable: false,
+)[
+  #set text(font: "DejaVu Sans Mono", size: {code_font_size}pt, fill: rgb("{code_text}"))
+  #it
+]
+#show link: it => text(fill: link-color, it)
+
+#let slide-cover(body) = [
+  #set page(fill: cover-canvas)
+  #set text(size: 20pt, fill: cover-muted)
+  #show heading.where(level: 1): it => block(width: 100%, below: 18pt)[
+    #text(size: 52pt, weight: "bold", fill: cover-ink)[#it.body]
+  ]
+  #v(1fr)
+  #block(width: 88%)[#body]
+  #v(1fr)
+]
+
+#let slide-content(body) = [
+  #block(width: 100%, breakable: true)[#body]
+]
+
+"##,
+        accent = options.accent,
+        canvas = palette.canvas,
+        cover_canvas = palette.cover_canvas,
+        panel = palette.panel,
+        ink = palette.ink,
+        cover_ink = palette.cover_ink,
+        muted = palette.muted,
+        cover_muted = palette.cover_muted,
+        border = palette.border,
+        callout_fill = palette.callout_fill,
+        success_fill = palette.success_fill,
+        success_accent = palette.success_accent,
+        table_header = palette.table_header,
+        table_row = palette.table_row,
+        table_alt = palette.table_alt,
+        on_header = palette.on_header,
+        link = palette.link,
+        title = typst_string(&options.title),
+        author = typst_string(&options.author),
+        margin = options.margin_mm,
+        code_fill = code_fill,
+        code_text = code_text,
+        code_font_size = SLIDE_CODE_FONT_SIZE_PT,
+        raw_theme = raw_theme,
+    )
+}
+
 fn code_block(
     source: &str,
     language: &str,
-    max_columns: usize,
-    max_lines: usize,
+    layout: CodeLayout,
     line_numbers: bool,
     theme: CodeTheme,
     liquid_highlighter: &mut Option<SyntaxHighlighter>,
 ) -> Result<String> {
     let language = normalize_fence_language(language);
-    let mut source = wrap_code(source.trim_end_matches('\n'), max_columns);
+    let mut source = wrap_code(source.trim_end_matches('\n'), layout.max_columns);
     if line_numbers {
         source = source
             .lines()
@@ -607,7 +862,7 @@ fn code_block(
         vec![String::new()]
     } else {
         lines
-            .chunks(max_lines)
+            .chunks(layout.max_lines)
             .map(|chunk| chunk.join("\n"))
             .collect()
     };
@@ -622,7 +877,7 @@ fn code_block(
                 None => liquid_highlighter.insert(SyntaxHighlighter::new(theme)?),
             };
             let lines = highlighter.highlight(chunk, "liquid")?;
-            output.push_str(&highlighted_code_frame(&lines, theme));
+            output.push_str(&highlighted_code_frame(&lines, theme, layout.font_size));
         } else {
             output.push_str(&format!(
                 "#raw(block: true, lang: {}, {})\n",
@@ -635,12 +890,12 @@ fn code_block(
     Ok(output)
 }
 
-fn highlighted_code_frame(lines: &[Vec<StyledToken>], theme: CodeTheme) -> String {
+fn highlighted_code_frame(lines: &[Vec<StyledToken>], theme: CodeTheme, font_size: f32) -> String {
     let (fill, foreground) = code_palette(theme);
     let mut output = format!(
         "#block(width: 100%, fill: rgb(\"{fill}\"), inset: 9pt, \
          radius: 2pt, breakable: false)[\n\
-         #set text(font: \"DejaVu Sans Mono\", size: 7.3pt, \
+         #set text(font: \"DejaVu Sans Mono\", size: {font_size}pt, \
          fill: rgb(\"{foreground}\"))\n\
          #set par(leading: 0.2em, spacing: 0pt)\n"
     );
@@ -682,19 +937,26 @@ fn mermaid_block(
     options: &TypstOptions,
     index: usize,
 ) -> Result<(String, (String, Vec<u8>))> {
-    // PDF pages are always light. Never inherit `--code-theme dark` or the
-    // crate's modern/default palette for diagrams.
+    // Keep Mermaid's internal palette independent from the code theme. The
+    // canvas itself is made transparent after cropping so it inherits the page.
+    let dark_slide =
+        options.render_mode == RenderMode::Slides && options.slide_template == SlideTemplate::Dark;
     let mut render_options = RenderOptions::mermaid_default();
+    if dark_slide {
+        render_options.theme = Theme::dark();
+    }
     // Typst resolves a single SVG font family; use the embedded DejaVu face.
     render_options.theme.font_family = "DejaVu Sans".to_owned();
     // Slightly denser than Mermaid's screen defaults so diagrams match print text.
     render_options.theme.font_size = 12.0;
-    render_options.theme.background = "#FFFFFF".to_owned();
-    render_options.theme.primary_color = "#ECECFF".to_owned();
-    render_options.theme.primary_text_color = "#333333".to_owned();
-    render_options.theme.primary_border_color = "#7B88A8".to_owned();
-    render_options.theme.line_color = "#2F3B4D".to_owned();
-    render_options.theme.text_color = "#333333".to_owned();
+    if !dark_slide {
+        render_options.theme.background = "#FFFFFF".to_owned();
+        render_options.theme.primary_color = "#ECECFF".to_owned();
+        render_options.theme.primary_text_color = "#333333".to_owned();
+        render_options.theme.primary_border_color = "#7B88A8".to_owned();
+        render_options.theme.line_color = "#2F3B4D".to_owned();
+        render_options.theme.text_color = "#333333".to_owned();
+    }
     let is_schedule = is_schedule_mermaid(source);
     let svg = render_with_options(source.trim(), render_options)
         .map_err(|error| Error::Mermaid(error.to_string()))?;
@@ -703,7 +965,7 @@ fn mermaid_block(
     } else {
         16.0
     };
-    let svg = force_light_mermaid_background(&crop_mermaid_svg(&svg, crop_padding));
+    let svg = make_mermaid_canvas_transparent(&crop_mermaid_svg(&svg, crop_padding));
     let path = format!("md2pdf-mermaid-{index}.svg");
     let width = mermaid_display_width(is_schedule, &svg, options);
     let image = format!("#image({}, width: {width})", typst_string(&path));
@@ -716,8 +978,8 @@ fn mermaid_block(
     Ok((typst, (path, svg.into_bytes())))
 }
 
-/// Keep the Mermaid canvas background white even if a dark theme leaks through.
-fn force_light_mermaid_background(svg: &str) -> String {
+/// Make the full-canvas Mermaid rectangle transparent without touching nodes.
+fn make_mermaid_canvas_transparent(svg: &str) -> String {
     let Some(start) = svg.find("<rect") else {
         return svg.to_owned();
     };
@@ -729,16 +991,18 @@ fn force_light_mermaid_background(svg: &str) -> String {
     if tag.contains("rx=") {
         return svg.to_owned();
     }
-    let is_dark_canvas = tag.contains("fill=\"#333333\"")
+    let is_canvas = tag.contains("fill=\"#FFFFFF\"")
+        || tag.contains("fill=\"#ffffff\"")
+        || tag.contains("fill=\"#333333\"")
         || tag.contains("fill=\"#333\"")
         || tag.contains("fill=\"#1f2020\"")
         || tag.contains("fill=\"#1F2020\"")
         || tag.contains("fill=\"#0d1117\"")
         || tag.contains("fill=\"#0D1117\"");
-    if !is_dark_canvas {
+    if !is_canvas {
         return svg.to_owned();
     }
-    let replacement = replace_attr(tag, "fill", "#FFFFFF");
+    let replacement = replace_attr(tag, "fill", "none");
     format!("{}{}{}", &svg[..start], replacement, &svg[end..])
 }
 
@@ -771,6 +1035,7 @@ fn crop_mermaid_svg(svg: &str, padding: f32) -> String {
 
 fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
     let without_defs = strip_svg_defs(svg);
+    let canvas = svg_view_box(&without_defs);
     let mut min_x = f32::INFINITY;
     let mut min_y = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
@@ -794,11 +1059,15 @@ fn mermaid_svg_content_bounds(svg: &str) -> Option<(f32, f32, f32, f32)> {
         let Some(height) = svg_tag_number(tag, "height") else {
             continue;
         };
-        // Skip the full-canvas background rectangle.
-        let is_background_fill = tag.contains("fill=\"#FFFFFF\"")
-            || tag.contains("fill=\"#333333\"")
-            || tag.contains("fill=\"#ffffff\"");
-        if width > 200.0 && height > 200.0 && is_background_fill && !tag.contains("rx=") {
+        // Skip only the renderer's full-canvas rectangle. Large transparent
+        // rectangles elsewhere may be meaningful architecture/group borders.
+        let is_canvas_rect = canvas.is_some_and(|(canvas_x, canvas_y, canvas_w, canvas_h)| {
+            (x - canvas_x).abs() <= 0.01
+                && (y - canvas_y).abs() <= 0.01
+                && (width - canvas_w).abs() <= 0.01
+                && (height - canvas_h).abs() <= 0.01
+        });
+        if is_canvas_rect && !tag.contains("rx=") {
             continue;
         }
         include_bounds(&mut min_x, &mut min_y, &mut max_x, &mut max_y, x, y);
@@ -1188,20 +1457,50 @@ fn mermaid_display_width_mm(svg: &str, options: &TypstOptions) -> f32 {
     let natural_height_pt = raw_height * CSS_PX_TO_PT;
     let (content_width_pt, content_height_pt) = mermaid_page_content_pt(options);
     let complex = is_complex_mermaid(raw_width, raw_height);
-    let (max_width_pt, max_height_pt, max_upscale, max_width_mm) = if complex {
-        (
-            content_width_pt * 0.92,
-            content_height_pt * 0.72,
-            1.15,
-            165.0,
-        )
-    } else {
-        (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
-    };
+    let wide = raw_width >= raw_height * 2.0;
+    let (max_width_pt, max_height_pt, max_upscale, max_width_mm) =
+        match (options.render_mode, complex, wide) {
+            (RenderMode::Slides, true, _) => (
+                content_width_pt * 0.92,
+                content_height_pt * 0.62,
+                1.3,
+                290.0,
+            ),
+            (RenderMode::Slides, false, true) => (
+                content_width_pt * 0.72,
+                content_height_pt * 0.42,
+                1.8,
+                230.0,
+            ),
+            (RenderMode::Slides, false, false) => (
+                content_width_pt * 0.55,
+                content_height_pt * 0.38,
+                1.15,
+                160.0,
+            ),
+            (RenderMode::Document, true, _) => (
+                content_width_pt * 0.92,
+                content_height_pt * 0.72,
+                1.15,
+                165.0,
+            ),
+            (RenderMode::Document, false, _) => {
+                (content_width_pt * 0.52, content_height_pt * 0.38, 1.0, 95.0)
+            }
+        };
     let scale = (max_width_pt / natural_width_pt)
         .min(max_height_pt / natural_height_pt)
-        .clamp(0.35, max_upscale);
-    ((natural_width_pt * scale) / POINTS_PER_MM).clamp(40.0, max_width_mm)
+        .min(max_upscale);
+    let fitted_width_mm = (natural_width_pt * scale) / POINTS_PER_MM;
+    let minimum_width_mm = 40.0;
+    let height_at_minimum_pt =
+        natural_height_pt * ((minimum_width_mm * POINTS_PER_MM) / natural_width_pt);
+    let width_mm = if fitted_width_mm < minimum_width_mm && height_at_minimum_pt <= max_height_pt {
+        minimum_width_mm
+    } else {
+        fitted_width_mm
+    };
+    width_mm.min(max_width_mm)
 }
 
 fn is_complex_mermaid(width: f32, height: f32) -> bool {
@@ -1210,18 +1509,12 @@ fn is_complex_mermaid(width: f32, height: f32) -> bool {
 }
 
 fn mermaid_page_content_pt(options: &TypstOptions) -> (f32, f32) {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_width_mm = if options.landscape {
-        portrait_height_mm
+    let (page_width_mm, page_height_mm) = output_dimensions_mm(options);
+    let header_mm = if options.render_mode == RenderMode::Document && options.show_header {
+        8.0
     } else {
-        portrait_width_mm
+        0.0
     };
-    let page_height_mm = if options.landscape {
-        portrait_width_mm
-    } else {
-        portrait_height_mm
-    };
-    let header_mm = if options.show_header { 8.0 } else { 0.0 };
     let content_width_pt = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM;
     let content_height_pt = (page_height_mm - 2.0 * options.margin_mm - header_mm) * POINTS_PER_MM;
     (content_width_pt, content_height_pt)
@@ -1292,32 +1585,60 @@ fn styled_token(token: &StyledToken) -> String {
     format!("#text({})[{body}]", properties.join(", "))
 }
 
+#[derive(Clone, Copy, Debug)]
+struct CodeLayout {
+    max_columns: usize,
+    max_lines: usize,
+    font_size: f32,
+}
+
+fn code_layout(options: &TypstOptions) -> CodeLayout {
+    CodeLayout {
+        max_columns: max_code_columns(options),
+        max_lines: max_code_lines(options),
+        font_size: code_font_size(options),
+    }
+}
+
 fn max_code_columns(options: &TypstOptions) -> usize {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_width_mm = if options.landscape {
-        portrait_height_mm
-    } else {
-        portrait_width_mm
+    let (page_width_mm, _) = output_dimensions_mm(options);
+    let glyph_width = match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_GLYPH_WIDTH_PT,
+        RenderMode::Slides => SLIDE_CODE_GLYPH_WIDTH_PT,
     };
     let usable_points = (page_width_mm - 2.0 * options.margin_mm) * POINTS_PER_MM
         - 18.0
         - if options.line_numbers { 27.0 } else { 0.0 };
-    (usable_points / CODE_GLYPH_WIDTH_PT)
-        .floor()
-        .clamp(40.0, 180.0) as usize
+    (usable_points / glyph_width).floor().clamp(40.0, 180.0) as usize
 }
 
 fn max_code_lines(options: &TypstOptions) -> usize {
-    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
-    let page_height_mm = if options.landscape {
-        portrait_width_mm
-    } else {
-        portrait_height_mm
+    let (_, page_height_mm) = output_dimensions_mm(options);
+    let line_height = match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_LINE_HEIGHT_PT,
+        RenderMode::Slides => SLIDE_CODE_LINE_HEIGHT_PT,
     };
     let usable_points = (page_height_mm - 2.0 * options.margin_mm) * POINTS_PER_MM - 32.0;
-    (usable_points / CODE_LINE_HEIGHT_PT)
-        .floor()
-        .clamp(18.0, 55.0) as usize
+    (usable_points / line_height).floor().clamp(18.0, 55.0) as usize
+}
+
+fn code_font_size(options: &TypstOptions) -> f32 {
+    match options.render_mode {
+        RenderMode::Document => DOCUMENT_CODE_FONT_SIZE_PT,
+        RenderMode::Slides => SLIDE_CODE_FONT_SIZE_PT,
+    }
+}
+
+fn output_dimensions_mm(options: &TypstOptions) -> (f32, f32) {
+    if options.render_mode == RenderMode::Slides {
+        return (SLIDE_WIDTH_MM, SLIDE_HEIGHT_MM);
+    }
+    let (portrait_width_mm, portrait_height_mm) = page_dimensions_mm(options.page_size);
+    if options.landscape {
+        (portrait_height_mm, portrait_width_mm)
+    } else {
+        (portrait_width_mm, portrait_height_mm)
+    }
 }
 
 fn page_dimensions_mm(page_size: PageSize) -> (f32, f32) {
@@ -1399,6 +1720,22 @@ fn resolve_image(
     }
 }
 
+fn render_standalone_image(image_path: &str, options: &TypstOptions) -> String {
+    let image = match options.render_mode {
+        RenderMode::Document => format!("#image({}, width: 90%)", typst_string(image_path)),
+        RenderMode::Slides => {
+            let available_height =
+                (SLIDE_HEIGHT_MM - 2.0 * options.margin_mm - SLIDE_IMAGE_RESERVED_HEIGHT_MM)
+                    .min(SLIDE_IMAGE_MAX_HEIGHT_MM);
+            format!(
+                "#image({}, width: 90%, height: {available_height}mm, fit: \"contain\")",
+                typst_string(image_path)
+            )
+        }
+    };
+    format!("#block(width: 100%, above: 7pt, below: 18pt)[#align(center)[{image}]]\n\n")
+}
+
 fn local_image_exists(source_dir: &Path, dest_url: &str) -> bool {
     let path = Path::new(dest_url);
     let resolved = if path.is_absolute() {
@@ -1463,6 +1800,31 @@ fn parser_options() -> Options {
         | Options::ENABLE_FOOTNOTES
 }
 
+fn is_slide_separator(markdown: &str, source_range: std::ops::Range<usize>) -> bool {
+    let line_start = markdown[..source_range.start]
+        .rfind('\n')
+        .map_or(0, |index| index + 1);
+    let line_end = markdown[source_range.start..]
+        .find('\n')
+        .map_or(markdown.len(), |index| source_range.start + index);
+    if markdown[line_start..line_end].trim_end_matches('\r') != "---"
+        || line_start == 0
+        || line_end == markdown.len()
+    {
+        return false;
+    }
+
+    let preceding_lines = &markdown[..line_start - 1];
+    let preceding_line_start = preceding_lines.rfind('\n').map_or(0, |index| index + 1);
+    let preceding_line_is_blank = preceding_lines[preceding_line_start..].trim().is_empty();
+
+    let following_lines = &markdown[line_end + 1..];
+    let following_line_end = following_lines.find('\n').unwrap_or(following_lines.len());
+    let following_line_is_blank = following_lines[..following_line_end].trim().is_empty();
+
+    preceding_line_is_blank && following_line_is_blank
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1478,6 +1840,8 @@ mod tests {
             footer: "Test".into(),
             page_size: PageSize::A4,
             landscape: false,
+            render_mode: RenderMode::Document,
+            slide_template: SlideTemplate::Modern,
             margin_mm: 17.0,
             show_header: true,
             page_break_prefixes: vec![],
@@ -1517,6 +1881,88 @@ mod tests {
     }
 
     #[test]
+    fn slide_mode_uses_widescreen_pages_and_horizontal_rule_breaks() {
+        let mut options = options();
+        options.render_mode = RenderMode::Slides;
+        let document = to_typst(
+            "# Opening\n\nIntro.\n\n---\n\n## Details\n\nBody.\n\n> Callout.\n\nExpected result: It works.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n",
+            &options,
+        )
+        .expect("render slides");
+
+        assert!(document.source.contains("width: 13.333333in"));
+        assert!(document.source.contains("height: 7.5in"));
+        assert!(
+            document
+                .source
+                .contains("#set text(font: \"DejaVu Sans\", size: 17pt")
+        );
+        assert!(document.source.contains("#slide-cover["));
+        assert!(document.source.contains("#slide-content["));
+        assert!(!document.source.contains("background: align(right)"));
+        assert!(
+            document
+                .source
+                .contains("display(\"1\") / #counter(page).final().first()")
+        );
+        assert!(document.source.contains("columns: (1fr, 1fr)"));
+        assert!(document.source.contains("#let callout-stroke = none"));
+        assert!(document.source.contains("#let success-stroke = none"));
+        assert!(!document.source.contains("stroke: (left:"));
+        assert!(document.source.contains("#pagebreak()"));
+        assert!(!document.source.contains("paper: \"a4\""));
+        assert_eq!(document.expected_pages, Some(2));
+    }
+
+    #[test]
+    fn slide_mode_only_breaks_on_isolated_triple_dash_lines() {
+        let mut options = options();
+        options.render_mode = RenderMode::Slides;
+        let document = to_typst(
+            "# Opening\n\n***\n\n___\n\n- - -\n\n  ---\n\n---\nNot isolated.\n\n---\n\n## Closing\n",
+            &options,
+        )
+        .expect("render slides");
+
+        assert_eq!(document.source.matches("#pagebreak()").count(), 1);
+        assert_eq!(document.source.matches("stroke: 0.5pt + border").count(), 5);
+        assert_eq!(document.expected_pages, Some(2));
+    }
+
+    #[test]
+    fn slide_templates_select_distinct_palettes() {
+        for (template, canvas) in [
+            (SlideTemplate::Modern, "#F3EFE7"),
+            (SlideTemplate::Minimal, "#FFFFFF"),
+            (SlideTemplate::Dark, "#18181B"),
+        ] {
+            let mut options = options();
+            options.render_mode = RenderMode::Slides;
+            options.slide_template = template;
+            let document = to_typst("# Palette", &options).expect("render slide palette");
+
+            assert!(
+                document
+                    .source
+                    .contains(&format!("#let canvas = rgb(\"{canvas}\")")),
+                "template={template:?}"
+            );
+            assert!(!document.source.contains("background: align(right)"));
+        }
+    }
+
+    #[test]
+    fn document_mode_keeps_horizontal_rules_and_a4_layout() {
+        let document =
+            to_typst("# Document\n\n---\n\nBody.\n", &options()).expect("render document");
+
+        assert!(document.source.contains("paper: \"a4\""));
+        assert!(document.source.contains("stroke: 0.5pt + border"));
+        assert!(!document.source.contains("#pagebreak()"));
+        assert_eq!(document.expected_pages, None);
+    }
+
+    #[test]
     fn wraps_long_code_without_splitting_unicode() {
         let wrapped = wrap_code(
             "let cafe = \"a line that is far too long to fit inside the code column\";",
@@ -1537,8 +1983,11 @@ mod tests {
         let typst = code_block(
             &code,
             "rust",
-            100,
-            50,
+            CodeLayout {
+                max_columns: 100,
+                max_lines: 50,
+                font_size: DOCUMENT_CODE_FONT_SIZE_PT,
+            },
             true,
             CodeTheme::Dark,
             &mut highlighter,
@@ -1561,12 +2010,19 @@ mod tests {
         let source_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         let document = to_typst(
             "# Image\n\n![Example](test.svg)",
-            &options_with_source(source_dir),
+            &options_with_source(source_dir.clone()),
         )
         .expect("valid bundled highlighter");
         assert!(document.source.contains("#image(\"test.svg\", width: 90%)"));
         assert!(document.source.contains("above: 7pt, below: 18pt"));
         assert!(document.warnings.is_empty());
+
+        let mut slide_options = options_with_source(source_dir);
+        slide_options.render_mode = RenderMode::Slides;
+        slide_options.margin_mm = 45.0;
+        let slides = to_typst("# Image\n\n![Example](test.svg)", &slide_options)
+            .expect("render margin-aware slide image");
+        assert!(slides.source.contains("height: 55.5mm"));
     }
 
     #[test]
@@ -1828,7 +2284,7 @@ flowchart TD
     }
 
     #[test]
-    fn mermaid_diagrams_use_light_palette_even_with_dark_code_theme() {
+    fn mermaid_diagrams_use_a_transparent_canvas_with_a_light_palette() {
         let mut opts = options();
         opts.code_theme = CodeTheme::Dark;
         let document = to_typst(
@@ -1840,8 +2296,8 @@ flowchart TD
         let first_rect_end = svg.find("/>").expect("background rect");
         let background = &svg[..first_rect_end];
         assert!(
-            background.contains("fill=\"#FFFFFF\""),
-            "expected white Mermaid canvas, got: {background}"
+            background.contains("fill=\"none\""),
+            "expected transparent Mermaid canvas, got: {background}"
         );
         assert!(
             svg.contains("fill=\"#ECECFF\""),
@@ -1852,6 +2308,68 @@ flowchart TD
             "dark Mermaid canvas must not appear on PDF pages"
         );
         assert!(svg.contains("fill=\"#333333\"") || svg.contains(">Markdown<"));
+    }
+
+    #[test]
+    fn mermaid_diagrams_use_contrasting_colors_on_dark_slides() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Diagram\n\n```mermaid\nflowchart LR\n    Markdown --> PDF\n```\n",
+            &opts,
+        )
+        .expect("render Mermaid on dark slides");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(svg.contains("fill=\"#1f2020\""), "dark nodes: {svg}");
+        assert!(
+            svg.contains("stroke=\"lightgrey\""),
+            "contrasting connectors: {svg}"
+        );
+        assert!(svg.contains("fill=\"#e0dfdf\""), "light labels: {svg}");
+    }
+
+    #[test]
+    fn mermaid_sequence_diagrams_use_the_complete_dark_theme() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Sequence\n\n```mermaid\nsequenceDiagram\n    participant A as API\n    participant D as Database\n    A->>D: Query\n    Note over A,D: Cached response\n```\n",
+            &opts,
+        )
+        .expect("render dark Mermaid sequence diagram");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(
+            svg.contains("fill=\"#1f2020\"") && svg.contains("fill=\"#474949\""),
+            "dark actor and note fills: {svg}"
+        );
+        assert!(!svg.contains("#EAEAEA"), "light actor fill leaked: {svg}");
+        assert!(!svg.contains("#FFF5AD"), "light note fill leaked: {svg}");
+    }
+
+    #[test]
+    fn mermaid_pie_diagrams_use_the_complete_dark_theme() {
+        let mut opts = options();
+        opts.render_mode = RenderMode::Slides;
+        opts.slide_template = SlideTemplate::Dark;
+        let document = to_typst(
+            "# Split\n\n```mermaid\npie title Delivery split\n    \"Build\" : 60\n    \"Review\" : 40\n```\n",
+            &opts,
+        )
+        .expect("render dark Mermaid pie diagram");
+        let svg = String::from_utf8_lossy(&document.assets[0].1);
+
+        assert!(svg.contains("fill=\"none\""), "transparent canvas: {svg}");
+        assert!(svg.contains("fill=\"#0b0000\""), "dark pie colors: {svg}");
+        assert!(
+            svg.contains("fill=\"lightgrey\"") || svg.contains("fill=\"#ccc\""),
+            "light pie labels: {svg}"
+        );
     }
 
     #[test]
@@ -1870,6 +2388,22 @@ flowchart TD
             "expected tighter crop, got {width}x{height}: {cropped}"
         );
         assert!(cropped.contains("viewBox=\""));
+    }
+
+    #[test]
+    fn transparent_mermaid_canvas_is_ignored_by_content_bounds() {
+        let svg = concat!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"500\" height=\"400\" ",
+            "viewBox=\"0 0 500 400\">",
+            "<rect x=\"0\" y=\"0\" width=\"500\" height=\"400\" fill=\"none\"/>",
+            "<rect x=\"50\" y=\"40\" width=\"300\" height=\"250\" fill=\"none\" stroke=\"#999\"/>",
+            "<rect x=\"80\" y=\"60\" width=\"100\" height=\"50\" rx=\"4\" fill=\"#ECECFF\"/>",
+            "</svg>"
+        );
+
+        let (min_x, min_y, max_x, max_y) =
+            mermaid_svg_content_bounds(svg).expect("painted content bounds");
+        assert_eq!((min_x, min_y, max_x, max_y), (50.0, 40.0, 350.0, 290.0));
     }
 
     #[test]
@@ -1987,6 +2521,54 @@ flowchart TD
         );
         assert!(is_complex_mermaid(900.0, 800.0));
         assert!(!is_complex_mermaid(400.0, 300.0));
+    }
+
+    #[test]
+    fn sizes_simple_mermaid_diagrams_more_generously_in_slides() {
+        let svg = r#"<svg width="450" height="120" viewBox="0 0 450 120"></svg>"#;
+        let document_width_mm = mermaid_display_width_mm(svg, &options());
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let slide_width_mm = mermaid_display_width_mm(svg, &slide_options);
+
+        assert!(
+            slide_width_mm >= document_width_mm * 1.7,
+            "expected slide diagram to be materially larger: document={document_width_mm}, slide={slide_width_mm}"
+        );
+        assert!(
+            (150.0..=230.0).contains(&slide_width_mm),
+            "unexpected slide width_mm={slide_width_mm}"
+        );
+    }
+
+    #[test]
+    fn avoids_overgrowing_non_wide_mermaid_diagrams_in_slides() {
+        let svg = r#"<svg width="450" height="300" viewBox="0 0 450 300"></svg>"#;
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let slide_width_mm = mermaid_display_width_mm(svg, &slide_options);
+
+        assert!(
+            (85.0..120.0).contains(&slide_width_mm),
+            "unexpected non-wide slide width_mm={slide_width_mm}"
+        );
+    }
+
+    #[test]
+    fn keeps_tall_mermaid_diagrams_within_the_slide_height_guard() {
+        let svg = r#"<svg width="120" height="1200" viewBox="0 0 120 1200"></svg>"#;
+        let mut slide_options = options();
+        slide_options.render_mode = RenderMode::Slides;
+        let width_mm = mermaid_display_width_mm(svg, &slide_options);
+        let rendered_height_mm = width_mm * 1200.0 / 120.0;
+        let (_, content_height_pt) = mermaid_page_content_pt(&slide_options);
+        let maximum_height_mm = (content_height_pt * 0.62) / POINTS_PER_MM;
+
+        assert!(
+            rendered_height_mm <= maximum_height_mm + 0.01,
+            "tall diagram exceeds its height guard: {rendered_height_mm} > {maximum_height_mm}"
+        );
+        assert!(width_mm < 40.0, "unsafe minimum width applied: {width_mm}");
     }
 
     #[test]

@@ -44,6 +44,8 @@ md2pdf document.md
 md2pdf document.md --output build/document.pdf
 md2pdf document.md --code-theme light --accent '#2563EB'
 md2pdf document.md --page-size letter --landscape
+md2pdf presentation.md --slides --output presentation.pdf
+md2pdf presentation.md --slides --slide-template dark -o presentation.pdf
 cat document.md | md2pdf - --output document.pdf
 md2pdf './**/*.md' --output-mode merge -o all.pdf
 md2pdf 'docs/**/ADR-*.md' --output-mode zip -o docs.zip -j 4
@@ -62,6 +64,8 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 | `--author TEXT` | empty | PDF metadata author |
 | `--page-size a4\|letter` | `a4` | Page format |
 | `--landscape` | off | Landscape orientation |
+| `--slides` | off | Render a 16:9 deck; `---` starts the next slide |
+| `--slide-template modern\|minimal\|dark` | `modern` | Built-in slide design |
 | `--margin MM` | `17` | Margins (8–45 mm) |
 | `--accent '#RRGGBB'` | `#C94C35` | Heading color |
 | `--code-theme dark\|light` | `dark` | Code block theme |
@@ -74,20 +78,64 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 
 Run `md2pdf --help` for the full list.
 
+## Mermaid diagrams
+
+This compact technical deck combines slide separators, a Mermaid pipeline, and
+syntax-highlighted code. Save it as `technical-deck.md`:
+
+````markdown
+# Rendering architecture
+
+Markdown to widescreen PDF, entirely in process.
+
+---
+
+### RENDERING PIPELINE
+
+## Embedded diagrams and code
+
+```mermaid
+flowchart LR
+    Markdown --> Parser --> Typst --> PDF
+```
+
+```rust
+fn main() {
+    println!("16:9 slides");
+}
+```
+````
+
+Render it with:
+
+```console
+md2pdf technical-deck.md --slides --slide-template modern -o technical-deck.pdf
+```
+
+![Generated cover slide for the technical deck](docs/assets/slides-technical-example.png)
+
+Mermaid SVG canvases are transparent, so diagrams inherit the document page or
+slide-template background. In slide decks, wide pipelines scale up for room
+readability while tall and non-wide diagrams remain constrained to the slide.
+The `dark` slide template automatically uses Mermaid's complete dark palette.
+Gantt and timeline diagrams continue to use the full available width.
+
 ## Features
 
 - Typst PDF engine with embedded fonts
 - TextMate syntax highlighting (dark / light)
-- Mermaid diagrams from `mermaid` / `mmd` fences
+- Transparent, page-aware Mermaid diagrams from `mermaid` / `mmd` fences
 - Clickable links and local images
 - Remote HTTPS images downloaded by default (`--no-external` to deny, `--allow-http` for cleartext HTTP)
 - Multi-file conversion: merge, zip, or per-file output with parallel jobs
 - A4 / Letter, portrait or landscape
+- 16:9 slide decks with cover/content layouts and three built-in templates
 - Custom title, author, header, footer, margins, and accent
 
 ## Docs
 
 - [Markdown support](docs/markdown-support.md)
+- [Slide decks](docs/slides.md)
 - [Syntax highlighting](docs/syntax-highlighting.md)
 - [Architecture](docs/architecture.md)
 - [Contributing](CONTRIBUTING.md)
