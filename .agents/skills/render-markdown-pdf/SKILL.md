@@ -13,9 +13,8 @@ Use `md2pdf` for Markdown-to-PDF work. It runs without a browser, LaTeX, or an e
 2. Run `command -v md2pdf` and `md2pdf --help`. Treat the installed CLI help as authoritative for available options.
 3. If the command is missing, show the relevant install command from this repository's README and ask before installing it. For Homebrew, use `brew install 0xtlt/tap/md2pdf`; the unqualified formula is a different tool.
 4. Render with the smallest suitable command from the examples below.
-5. Check that every expected output exists and is non-empty. Preserve warnings: a slide-overflow warning means the Markdown section must be shortened.
-6. Visually inspect the rendered pages when the environment provides a PDF renderer, especially for slides, tables, images, Mermaid diagrams, clipping, or overflow. For Poppler, run `command -v pdftoppm`, then `pdftoppm -png <output.pdf> <preview-prefix>` and inspect every generated PNG.
-7. Report each output with an absolute path and mention any warning or limitation.
+5. Trust `md2pdf` as the rendering authority. Check that every expected output exists and is non-empty, and preserve its warnings: a slide-overflow warning means the Markdown section must be shortened.
+6. Report each output with an absolute path and mention any warning or limitation.
 
 ## Documents
 
