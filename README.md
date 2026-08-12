@@ -78,6 +78,20 @@ md2pdf a.md b.md --output-mode files -o out/ --name-format '{stem}-{index}.pdf'
 
 Run `md2pdf --help` for the full list.
 
+## Agent skill
+
+This repository includes a skill that teaches Codex and other compatible agents
+to render Markdown documents, batch outputs, and 16:9 slide decks with `md2pdf`.
+
+Install it in the current project:
+
+```console
+npx skills add 0xtlt/md2pdf --skill render-markdown-pdf --agent codex
+```
+
+Add `--global` to install it globally. In Codex, invoke it explicitly with
+`$render-markdown-pdf`.
+
 ## Mermaid diagrams
 
 This compact technical deck combines slide separators, a Mermaid pipeline, and

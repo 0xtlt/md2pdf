@@ -1,0 +1,4 @@
+interface:
+  display_name: "Render Markdown PDF"
+  short_description: "Render Markdown documents and slide decks"
+  default_prompt: "Use $render-markdown-pdf to render this Markdown as a polished PDF."
