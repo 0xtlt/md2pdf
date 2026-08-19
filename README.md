@@ -140,6 +140,7 @@ Gantt and timeline diagrams continue to use the full available width.
 - TextMate syntax highlighting (dark / light)
 - Transparent, page-aware Mermaid diagrams from `mermaid` / `mmd` fences
 - Clickable links and local images
+- Automatic internal navigation for `.md` links between files in merged PDFs
 - Remote HTTPS images downloaded by default (`--no-external` to deny, `--allow-http` for cleartext HTTP)
 - Multi-file conversion: merge, zip, or per-file output with parallel jobs
 - A4 / Letter, portrait or landscape
