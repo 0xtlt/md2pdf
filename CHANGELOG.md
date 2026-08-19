@@ -5,6 +5,19 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-08-19
+
+### Added
+
+- include a `render-markdown-pdf` Agent Skill for Codex and compatible agents,
+  covering documents, batch output, merged PDFs, ZIP archives, Mermaid diagrams,
+  syntax highlighting, and 16:9 slide decks.
+
+### Fixed
+
+- rewrite relative `.md` links between included files in merged PDFs as internal
+  destinations while preserving unmatched Markdown links as URI annotations.
+
 ## [3.4.0] - 2026-08-12
 
 ### Added
@@ -155,7 +168,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.0...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.1...HEAD
+[3.4.1]: https://github.com/0xtlt/md2pdf/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/0xtlt/md2pdf/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/0xtlt/md2pdf/compare/v3.3.0...v3.3.1
 [3.3.0]: https://github.com/0xtlt/md2pdf/compare/v3.2.2...v3.3.0
