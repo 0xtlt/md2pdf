@@ -581,6 +581,82 @@ fn greps_directory_and_merges_pdfs() {
 }
 
 #[test]
+fn merged_pdf_links_to_included_markdown_as_an_internal_destination() {
+    let directory = tempdir().expect("temporary directory");
+    let docs = directory.path().join("docs");
+    let guides = docs.join("guides");
+    fs::create_dir_all(&guides).expect("guides");
+    let source = docs.join("a-index.md");
+    let target = guides.join("b-target.md");
+    fs::write(
+        &source,
+        "# Index\n\n[Open the included guide](./guides/b-target.md)\n\n[Missing guide](./guides/missing.md)\n",
+    )
+    .expect("write source");
+    fs::write(&target, "# Target\n\nDestination page.\n").expect("write target");
+    let output = directory.path().join("merged.pdf");
+
+    let result = binary()
+        .arg(&source)
+        .arg(&target)
+        .args(["--output-mode", "merge", "--output"])
+        .arg(&output)
+        .arg("--quiet")
+        .output()
+        .expect("run md2pdf");
+
+    assert!(
+        result.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let pdf = PdfDocument::load(&output).expect("load merged PDF");
+    let pages = pdf.get_pages();
+    let source_page = pages[&1];
+    let target_page = pages[&2];
+    let annotations = pdf
+        .get_page_annotations(source_page)
+        .expect("source page annotations");
+    let actions = annotations
+        .iter()
+        .filter_map(|annotation| annotation.get(b"A").ok()?.as_dict().ok())
+        .collect::<Vec<_>>();
+    let internal_action = actions
+        .iter()
+        .find(|action| action.get(b"S").and_then(lopdf::Object::as_name).ok() == Some(b"GoTo"))
+        .expect("internal link action");
+
+    assert_eq!(
+        internal_action
+            .get(b"S")
+            .and_then(lopdf::Object::as_name)
+            .expect("GoTo action type"),
+        b"GoTo"
+    );
+    let destination = internal_action
+        .get(b"D")
+        .and_then(lopdf::Object::as_array)
+        .expect("internal destination array");
+    assert_eq!(
+        destination
+            .first()
+            .and_then(|object| object.as_reference().ok()),
+        Some(target_page)
+    );
+    let external_action = actions
+        .iter()
+        .find(|action| action.get(b"S").and_then(lopdf::Object::as_name).ok() == Some(b"URI"))
+        .expect("unmatched Markdown URI action");
+    assert_eq!(
+        external_action
+            .get(b"URI")
+            .and_then(lopdf::Object::as_str)
+            .expect("unmatched Markdown URI"),
+        b"./guides/missing.md"
+    );
+}
+
+#[test]
 fn packs_pdfs_into_a_zip_archive() {
     let directory = tempdir().expect("temporary directory");
     let a = directory.path().join("one.md");

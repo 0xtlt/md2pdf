@@ -43,7 +43,7 @@ fn run(cli: Cli) -> Result<()> {
     let converted = convert_sources(&cli, &sources, jobs)?;
     match cli.output_mode {
         OutputMode::Files => write_files(&cli, &sources, &converted)?,
-        OutputMode::Merge => write_merge(&cli, &converted)?,
+        OutputMode::Merge => write_merge(&cli, &sources, &converted)?,
         OutputMode::Zip => write_zip(&cli, &sources, &converted)?,
     }
     Ok(())
@@ -286,7 +286,7 @@ fn write_files(cli: &Cli, sources: &[InputSource], converted: &[ConvertedDocumen
     Ok(())
 }
 
-fn write_merge(cli: &Cli, converted: &[ConvertedDocument]) -> Result<()> {
+fn write_merge(cli: &Cli, sources: &[InputSource], converted: &[ConvertedDocument]) -> Result<()> {
     let output = cli
         .output
         .as_ref()
@@ -294,8 +294,12 @@ fn write_merge(cli: &Cli, converted: &[ConvertedDocument]) -> Result<()> {
     for document in converted {
         emit_warnings(cli, &document.warnings);
     }
-    let parts: Vec<Vec<u8>> = converted.iter().map(|doc| doc.bytes.clone()).collect();
-    let merged = pdf::merge_pdfs(&parts)?;
+    let parts = sources
+        .iter()
+        .zip(converted)
+        .map(|(source, document)| (source.path.as_path(), document.bytes.as_slice()))
+        .collect::<Vec<_>>();
+    let merged = pdf::merge_markdown_pdfs(&parts)?;
     let pages: usize = converted.iter().map(|doc| doc.pages).sum();
     pdf::write_bytes(output, &merged)?;
     if !cli.quiet {

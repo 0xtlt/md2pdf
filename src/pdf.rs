@@ -1,4 +1,9 @@
-use std::{fs, io::Cursor, path::Path};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    io::Cursor,
+    path::{Path, PathBuf},
+};
 
 use lopdf::{Document as PdfDocument, Object, ObjectId};
 use typst_as_lib::TypstEngine;
@@ -80,22 +85,51 @@ pub fn write_bytes(output: &Path, bytes: &[u8]) -> Result<()> {
 
 /// Concatenate PDF documents in order into a single PDF.
 pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
-    use std::collections::BTreeMap;
+    let parts = parts
+        .iter()
+        .map(|bytes| MergePart {
+            bytes,
+            source_path: None,
+        })
+        .collect::<Vec<_>>();
+    merge_pdf_parts(&parts)
+}
 
+/// Concatenate PDFs rendered from Markdown and turn links between included
+/// source files into internal destinations in the merged document.
+pub fn merge_markdown_pdfs(parts: &[(&Path, &[u8])]) -> Result<Vec<u8>> {
+    let parts = parts
+        .iter()
+        .map(|(source_path, bytes)| MergePart {
+            bytes,
+            source_path: Some(*source_path),
+        })
+        .collect::<Vec<_>>();
+    merge_pdf_parts(&parts)
+}
+
+struct MergePart<'a> {
+    bytes: &'a [u8],
+    source_path: Option<&'a Path>,
+}
+
+fn merge_pdf_parts(parts: &[MergePart<'_>]) -> Result<Vec<u8>> {
     if parts.is_empty() {
         return Err(Error::Pdf("no PDF parts to merge".to_owned()));
     }
     if parts.len() == 1 {
-        return Ok(parts[0].clone());
+        return Ok(parts[0].bytes.to_vec());
     }
 
     let mut max_id = 1u32;
     let mut documents_pages = BTreeMap::new();
     let mut documents_objects = BTreeMap::new();
+    let mut page_sources = HashMap::new();
+    let mut target_pages = HashMap::new();
     let mut document = PdfDocument::with_version("1.5");
 
     for part in parts {
-        let mut doc = PdfDocument::load_mem(part)
+        let mut doc = PdfDocument::load_mem(part.bytes)
             .map_err(|error| Error::Pdf(format!("failed to parse PDF part: {error}")))?;
         doc.renumber_objects_with(max_id);
         max_id = doc.max_id + 1;
@@ -103,6 +137,11 @@ pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
         let pages = doc.get_pages();
         let mut page_numbers: Vec<_> = pages.keys().copied().collect();
         page_numbers.sort_unstable();
+        let source_path = part.source_path.map(absolute_source_path);
+        if let (Some(source_path), Some(page_number)) = (source_path.as_ref(), page_numbers.first())
+        {
+            target_pages.insert(normalize_source_path(source_path), pages[page_number]);
+        }
         for page_number in page_numbers {
             let object_id = pages[&page_number];
             let object = doc
@@ -110,6 +149,9 @@ pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
                 .map_err(|error| Error::Pdf(format!("failed to read PDF page: {error}")))?
                 .clone();
             documents_pages.insert(object_id, object);
+            if let Some(source_path) = &source_path {
+                page_sources.insert(object_id, source_path.clone());
+            }
         }
         documents_objects.extend(doc.objects);
     }
@@ -158,6 +200,8 @@ pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
         }
     }
 
+    rewrite_internal_markdown_links(&mut document, &page_sources, &target_pages);
+
     if let Ok(dictionary) = pages_obj.as_dict() {
         let mut dictionary = dictionary.clone();
         dictionary.set("Count", documents_pages.len() as u32);
@@ -191,6 +235,155 @@ pub fn merge_pdfs(parts: &[Vec<u8>]) -> Result<Vec<u8>> {
         .save_to(&mut output)
         .map_err(|error| Error::Pdf(format!("failed to serialize merged PDF: {error}")))?;
     Ok(output.into_inner())
+}
+
+fn rewrite_internal_markdown_links(
+    document: &mut PdfDocument,
+    page_sources: &HashMap<ObjectId, PathBuf>,
+    target_pages: &HashMap<PathBuf, ObjectId>,
+) {
+    for (page_id, source_path) in page_sources {
+        let annotation_ids = page_annotation_ids(document, *page_id);
+        for annotation_id in annotation_ids {
+            let Some(uri) = annotation_uri(document, annotation_id) else {
+                continue;
+            };
+            let Some(target_page) = markdown_link_target(&uri, source_path, target_pages) else {
+                continue;
+            };
+            let Ok(annotation) = document.get_dictionary_mut(annotation_id) else {
+                continue;
+            };
+            let mut action = lopdf::Dictionary::new();
+            action.set("S", "GoTo");
+            action.set(
+                "D",
+                vec![
+                    Object::Reference(target_page),
+                    Object::Name(b"Fit".to_vec()),
+                ],
+            );
+            annotation.set("A", action);
+            annotation.remove(b"Contents");
+        }
+    }
+}
+
+fn page_annotation_ids(document: &PdfDocument, page_id: ObjectId) -> Vec<ObjectId> {
+    let Ok(page) = document.get_dictionary(page_id) else {
+        return Vec::new();
+    };
+    let Ok(annotations) = page.get(b"Annots") else {
+        return Vec::new();
+    };
+    let annotations = match annotations {
+        Object::Array(annotations) => annotations,
+        Object::Reference(id) => match document.get_object(*id).and_then(Object::as_array) {
+            Ok(annotations) => annotations,
+            Err(_) => return Vec::new(),
+        },
+        _ => return Vec::new(),
+    };
+    annotations
+        .iter()
+        .filter_map(|annotation| annotation.as_reference().ok())
+        .collect()
+}
+
+fn annotation_uri(document: &PdfDocument, annotation_id: ObjectId) -> Option<String> {
+    let annotation = document.get_dictionary(annotation_id).ok()?;
+    let action = match annotation.get(b"A").ok()? {
+        Object::Dictionary(action) => action,
+        Object::Reference(id) => document.get_dictionary(*id).ok()?,
+        _ => return None,
+    };
+    if action.get(b"S").and_then(Object::as_name).ok()? != b"URI" {
+        return None;
+    }
+    String::from_utf8(action.get(b"URI").and_then(Object::as_str).ok()?.to_vec()).ok()
+}
+
+fn markdown_link_target(
+    uri: &str,
+    source_path: &Path,
+    target_pages: &HashMap<PathBuf, ObjectId>,
+) -> Option<ObjectId> {
+    let path = uri.split(['#', '?']).next()?;
+    if path.is_empty() || has_uri_scheme(path) {
+        return None;
+    }
+    let path = percent_decode_path(path)?;
+    if !Path::new(&path)
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+    {
+        return None;
+    }
+    let target_path = source_path.parent()?.join(path);
+    target_pages
+        .get(&normalize_source_path(&target_path))
+        .copied()
+}
+
+fn has_uri_scheme(value: &str) -> bool {
+    let Some(colon) = value.find(':') else {
+        return false;
+    };
+    let scheme = &value[..colon];
+    !scheme.is_empty()
+        && scheme.as_bytes()[0].is_ascii_alphabetic()
+        && scheme
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'-' | b'.'))
+}
+
+fn percent_decode_path(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0usize;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        let high = hex_value(*bytes.get(index + 1)?)?;
+        let low = hex_value(*bytes.get(index + 2)?)?;
+        decoded.push((high << 4) | low);
+        index += 3;
+    }
+    String::from_utf8(decoded).ok()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn normalize_source_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join(path)
+        }
+    })
+}
+
+fn absolute_source_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join(path)
+    }
 }
 
 fn humanize_typst_debug(debug: &str) -> String {
