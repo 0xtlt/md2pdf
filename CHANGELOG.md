@@ -5,6 +5,13 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-10-22
+
+### Security
+
+- update Cargo dependencies, including `zip` 9.0.5, `rustls` 0.23.46,
+  `rustls-webpki` 0.103.16 and `webpki-roots` 1.0.10, fixing 9 RustSec advisories.
+
 ## [3.4.1] - 2026-08-19
 
 ### Added
@@ -168,7 +175,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.1...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.2...HEAD
+[3.4.2]: https://github.com/0xtlt/md2pdf/compare/v3.4.1...v3.4.2
 [3.4.1]: https://github.com/0xtlt/md2pdf/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/0xtlt/md2pdf/compare/v3.3.1...v3.4.0
 [3.3.1]: https://github.com/0xtlt/md2pdf/compare/v3.3.0...v3.3.1
