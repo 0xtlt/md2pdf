@@ -1346,8 +1346,10 @@ fn path_coordinate_pairs(path: &str) -> Vec<(f32, f32)> {
         numbers.push(value);
     }
     numbers
-        .chunks_exact(2)
-        .map(|chunk| (chunk[0], chunk[1]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[x, y]| (x, y))
         .collect()
 }
 
