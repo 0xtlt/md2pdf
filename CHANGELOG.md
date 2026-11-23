@@ -5,6 +5,14 @@ All notable changes are documented in this file. The format follows
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-11-23
+
+### Fixed
+
+- build the Linux x86_64 release binary against glibc 2.28, so it runs on
+  Ubuntu 20.04+, Debian 10+, RHEL 8+ and similar distros instead of requiring
+  the build runner's glibc 2.43 (#19).
+
 ## [3.4.2] - 2026-10-22
 
 ### Security
@@ -175,7 +183,8 @@ All notable changes are documented in this file. The format follows
 - documented public Rust APIs;
 - generous vertical spacing between block elements.
 
-[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.2...HEAD
+[Unreleased]: https://github.com/0xtlt/md2pdf/compare/v3.4.3...HEAD
+[3.4.3]: https://github.com/0xtlt/md2pdf/compare/v3.4.2...v3.4.3
 [3.4.2]: https://github.com/0xtlt/md2pdf/compare/v3.4.1...v3.4.2
 [3.4.1]: https://github.com/0xtlt/md2pdf/compare/v3.4.0...v3.4.1
 [3.4.0]: https://github.com/0xtlt/md2pdf/compare/v3.3.1...v3.4.0
